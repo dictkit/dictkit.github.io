@@ -1,0 +1,20 @@
+{
+  "dicts": [
+    {
+      "name": "现代汉语词典（第7版）",
+      "repo": "xiandai"
+    },
+    {
+      "name": "现代汉语规范词典",
+      "repo": "guifan"
+    },
+    {
+      "name": "王力古汉语字典",
+      "repo": "ghy"
+    },
+    {
+      "name": "规范字表",
+      "repo": "zibiao"
+    }
+  ]
+}

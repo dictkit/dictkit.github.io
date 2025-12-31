@@ -1,0 +1,41 @@
+/* Icons */
+.icon {
+    width: 1.5em;
+    height: 1.5em;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Search icon */
+.icon-search {
+    background: url("./icon/search.svg") no-repeat center center;
+}
+
+/* List icon */
+.icon-list {
+    background: url("./icon/table-of-contents.svg") no-repeat center center;
+}
+
+/* Spell check icon */
+.icon-spell-check {
+    background: url("./icon/spell-check.svg") no-repeat center center;
+}
+
+.icon-shuffle {
+    background: url("./icon/shuffle.svg") no-repeat center center;
+}
+
+.icon-arrow-left {
+    background: url("./icon/left.svg") no-repeat center center;
+    background-size: contain;
+    width: 5rem;
+    height: 5rem;
+}
+
+.icon-arrow-right {
+    background: url("./icon/right.svg") no-repeat center center;
+    background-size: contain;
+    width: 5rem;
+    height: 5rem;
+}

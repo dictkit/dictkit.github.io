@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="，支持音节、字词检索。">
+    <meta name="keywords" content="汉语词典, 词典, 字词检索">
+    <meta name="author" content="zispace">
+    <meta name="robots" content="index, follow">
+
+    <title>汉语字典词典在线版</title>
+    <link rel="icon" href="favicon.ico">
+    <link rel="stylesheet" href="assets/styles.css">
+    <link rel="stylesheet" href="assets/icons.css">
+</head>
+
+<body>
+
+    <header>
+        <!-- <h1>词典在线</h1> -->
+        <div class="search-container">
+            <img src="assets/logo.png" alt="Logo" class="search-logo">
+            <div class="search-input-container">
+                <input type="text" class="search-input" id="searchInput" placeholder="请输入拼音、字词或正文页码……" autocomplete="off" />
+                <div class="search-suggestions" id="searchSuggestions"></div>
+            </div>
+
+            <div class="search-buttons">
+                <button class="action-btn" id="sidebarToggle" title="词典目录">
+                    <!-- <i class="fas fa-list"></i> -->
+                    <span class="icon icon-list"></span>
+                </button>
+                <button class="action-btn" id="tipToggle" title="拼音提示">
+                    <!-- <i class="fas fa-spell-check"></i> -->
+                    <span class="icon icon-spell-check"></span>
+                </button>
+
+                <button class="search-btn" id="searchBtn" title="搜索">
+                    <!-- <i class="fas fa-search"></i> -->
+                    <span class="icon icon-search"></span>
+                </button>
+            </div>
+        </div>
+
+        <div id="search-result"></div>
+    </header>
+
+    <!-- 拼音声调弹窗 -->
+    <div class="popup-overlay" id="pinyinPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h3>拼音声调速查</h3>
+                <button class="close-popup" id="closePopup">&times;</button>
+            </div>
+            <div class="search-tip">
+                <ul>
+                    <li>āáǎà ōóǒò ēéěè</li>
+                    <li>īíǐì ūúǔù üǖǘǚǜ</li>
+                    <li>êê̄ếê̌ề m̄ḿm̀ ńňǹ</li>
+                    <li>ẑĉŝ ŋ</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar" id="sidebarPopup">
+        <div class="sidebar-header">
+            <h3>词典简明目录</h3>
+            <button class="close-popup" id="closeSidebarPopup">&times;</button>
+        </div>
+        <div class="sidebar-content" id="bookmarksList"></div>
+    </div>
+
+    <section class="result-container">
+        <img id="main-image" alt="Image">
+        <div id="prevBtn" class="nav-arrow">
+            <span class="icon icon-arrow-left"></span>
+        </div>
+        <div id="nextBtn" class="nav-arrow">
+            <span class="icon icon-arrow-right"></span>
+        </div>
+    </section>
+
+    <script src="assets/script.js"></script>
+</body>
+
+</html>

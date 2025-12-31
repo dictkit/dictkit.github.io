@@ -1,0 +1,17 @@
+# macos
+.DS_Store
+
+# linux
+*~
+
+# images
+# docs/images
+# docs/extra
+
+# data
+# docs/data/*.json
+
+# misc
+trash/
+temp/
+todo/

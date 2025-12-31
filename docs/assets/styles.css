@@ -1,0 +1,461 @@
+@font-face {
+  font-family: "KingHwaOldSong";
+  src: url("./kinghwaoldsong-v3-lite.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --background-color: #fdfcf8;
+  --text-color: #2b2b2b;
+  --header-color: #ec0015;
+  --search-color: #f76f43;
+  --border-color: #ccc;
+  --shadow-color: rgba(0, 0, 0, 0.2);
+  --highlight-color: rgba(43, 43, 43, 0.5);
+}
+
+/* 暗色模式样式 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #121212;
+    --text-color: #f0f0f0;
+    --header-color: #ff4b55;
+    --search-color: #ff8a5c;
+    --border-color: #444;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+  }
+
+  #main-image[src*="images/"] {
+    filter: invert(90%);
+    transition: filter 0.3s ease;
+  }
+
+  .icon {
+    filter: invert(80%);
+  }
+}
+
+body {
+  font-family: "KingHwaOldSong", "Times New Roman", "NanoOldSong-A", serif;
+  margin: 0 auto;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  height: 100vh;
+  background: var(--background-color);
+  color: var(--text-color);
+}
+
+header {
+  padding: 0.5rem;
+  text-align: center;
+  box-shadow: 0 2px 6px var(--shadow-color);
+}
+
+header h1 {
+  font-size: 2rem;
+  color: var(--header-color);
+  margin-bottom: 0.5rem;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
+  margin: 0 auto;
+  width: 90%;
+  max-width: 800px;
+  border-radius: 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 0.5rem 0.8rem;
+  transition: all 0.3s ease;
+  border: 3px solid var(--border-color);
+}
+
+.search-container:focus-within {
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  border-color: var(--search-color);
+}
+
+.search-logo {
+  height: 40px;
+  width: 40px;
+  margin-right: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.search-logo:hover {
+  transform: scale(1.05);
+}
+
+.search-input-container {
+  position: relative;
+  flex: 1;
+}
+
+.search-input {
+  width: 100%;
+  /* Make input fill its container */
+  box-sizing: border-box;
+  /* Include padding in width calculation */
+  /* Keep your existing styles */
+  border: none;
+  outline: none;
+  padding: 0.8rem 1rem;
+  color: var(--text-color);
+  background-color: color-mix(in srgb, var(--background-color) 80%, var(--border-color));
+  font-size: 1rem;
+  font-family: "KingHwaOldSong", "Times New Roman", "NanoOldSong-A", serif;
+}
+
+.search-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--background-color);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  display: none;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.search-suggestions.visible {
+  display: block;
+}
+
+.suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.suggestion-item:hover,
+.suggestion-item.highlighted {
+  background-color: var(--highlight-color);
+}
+
+.suggestion-type {
+  font-size: 0.8em;
+  opacity: 0.7;
+  margin-left: 8px;
+}
+
+.search-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.search-btn {
+  background: var(--header-color);
+  color: var(--text-color);
+  border: none;
+  border-radius: 15%;
+  height: 45px;
+  width: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 0.5rem;
+}
+
+.search-btn:hover {
+  background: var(--search-color);
+  transform: scale(1.05);
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  /* color: #666; */
+  width: 35px;
+  height: 35px;
+  /* border-radius: 50%; */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0 0.1rem;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.action-btn:hover::after {
+  opacity: 1;
+  visibility: visible;
+  bottom: -35px;
+}
+
+.popup-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+
+.popup-content {
+  background-color: var(--background-color);
+  padding: 1.5rem;
+  border-radius: 8px;
+  max-width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.popup-header h3 {
+  margin: 0;
+}
+
+.close-popup {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-color);
+  padding: 0 0.5rem;
+  line-height: 1;
+}
+
+.close-popup:hover {
+  color: var(--header-color);
+}
+
+.search-tip {
+  font-family: monospace;
+  font-size: 1rem;
+  margin: 1rem 2rem;
+}
+
+.search-tip ul {
+  padding-inline-start: 10px;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  position: fixed;
+  top: 0;
+  right: -300px;
+  width: 280px;
+  height: 100%;
+  background-color: var(--background-color);
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  transition: right 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.active {
+  right: 0;
+}
+
+.sidebar-header {
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-color);
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.close-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+
+.bookmark-group {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bookmark-group-header {
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.bookmark-group-header:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.bookmark-group-header i {
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
+}
+
+.bookmark-group-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.bookmark-group.expanded .bookmark-group-content {
+  max-height: 1000px;
+}
+
+.bookmark-item {
+  /* padding: 0.6rem 1.5rem 0.6rem 2.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-size: 0.9rem; */
+  color: var(--text-color);
+  /* display: flex; */
+  /* justify-content: space-between; */
+  /* align-items: center; */
+  padding: 0.25rem 1.5rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.bookmark-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.page-number {
+  font-size: 0.75rem;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+
+#search-result {
+  color: var(--header-color);
+  font-weight: bolder;
+}
+
+.result-container {
+  margin: 1rem auto;
+  text-align: center;
+  flex-direction: row;
+  position: relative;
+  width: 80%;
+  max-width: 80%;
+}
+
+.search-container {
+  max-height: 20vh;
+}
+
+#main-image {
+  max-width: 100%;
+  max-height: 85vh;
+}
+
+.nav-arrow {
+  position: absolute;
+  top: 15%;
+  height: 70%;
+  width: 30%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background-color: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  z-index: 100;
+}
+
+.nav-arrow:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.result-container:hover .nav-arrow {
+  opacity: 0.9;
+}
+
+#prevBtn {
+  left: 0;
+  border-radius: 0 120px 120px 0;
+}
+
+#nextBtn {
+  right: 0;
+  border-radius: 120px 0 0 120px;
+}
+
+#prevBtn,
+#nextBtn {
+  display: flex !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+
+  .search-input,
+  #search-result,
+  .sidebar-header h3,
+  .sidebar-content {
+    font-size: smaller;
+  }
+
+  .action-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .search-btn {
+    width: 35px;
+    height: 35px;
+  }
+
+  .search-logo {
+    display: none;
+  }
+
+  .result-container {
+    width: 95%;
+    max-width: 95%;
+  }
+}
