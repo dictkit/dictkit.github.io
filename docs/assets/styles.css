@@ -104,7 +104,11 @@ header h1 {
   outline: none;
   padding: 0.8rem 1rem;
   color: var(--text-color);
-  background-color: color-mix(in srgb, var(--background-color) 80%, var(--border-color));
+  background-color: color-mix(
+    in srgb,
+    var(--background-color) 80%,
+    var(--border-color)
+  );
   font-size: 1rem;
   font-family: "KingHwaOldSong", "Times New Roman", "NanoOldSong-A", serif;
 }
@@ -432,7 +436,6 @@ header h1 {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-
   .search-input,
   #search-result,
   .sidebar-header h3,
@@ -458,4 +461,57 @@ header h1 {
     width: 95%;
     max-width: 95%;
   }
+}
+
+.dictionary-selector {
+  margin-right: 10px;
+  position: relative;
+}
+
+.dict-selector-container {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.dict-logo {
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
+  object-fit: contain;
+  position: absolute;
+  left: 8px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.dict-selector {
+  padding: 8px 12px 8px 48px; /* Add left padding for logo */
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  cursor: pointer;
+  height: 40px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 30px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.dict-selector:focus {
+  outline: none;
+  border-color: var(--search-color);
+  box-shadow: 0 0 0 2px rgba(247, 111, 67, 0.2);
+}
+
+/* Hide default arrow in IE */
+.dict-selector::-ms-expand {
+  display: none;
 }

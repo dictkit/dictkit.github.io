@@ -20,7 +20,15 @@
     <header>
         <!-- <h1>词典在线</h1> -->
         <div class="search-container">
-            <img src="assets/logo.png" alt="Logo" class="search-logo">
+            <!-- 下拉选择词典 -->
+            <div class="dictionary-selector">
+                <div class="dict-selector-container">
+                    <img id="dictLogo" src="" alt="Dictionary Logo" class="dict-logo">
+                    <select id="dictSelector" class="dict-selector" title="选择词典">
+                        <!-- Will be populated by JavaScript -->
+                    </select>
+                </div>
+            </div>
             <div class="search-input-container">
                 <input type="text" class="search-input" id="searchInput" placeholder="请输入拼音、字词或正文页码……" autocomplete="off" />
                 <div class="search-suggestions" id="searchSuggestions"></div>

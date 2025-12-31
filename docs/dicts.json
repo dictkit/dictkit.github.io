@@ -1,0 +1,40 @@
+{
+  "dicts": [
+    {
+      "name": "现代汉语词典",
+      "repo": "xiandai",
+      "pages": {
+        "content": { "count": 1766, "prefix": "" },
+        "header": { "count": 94, "prefix": "A" },
+        "footer": { "count": 37, "prefix": "C" }
+      }
+    },
+    {
+      "name": "现代汉语规范词典",
+      "repo": "guifan",
+      "pages": {
+        "content": { "count": 1858, "prefix": "" },
+        "header": { "count": 100, "prefix": "A" },
+        "footer": { "count": 46, "prefix": "C" }
+      }
+    },
+    {
+      "name": "王力古汉语字典",
+      "repo": "ghy",
+      "pages": {
+        "content": { "count": 1792, "prefix": "" },
+        "header": { "count": 115, "prefix": "A" },
+        "footer": { "count": 26, "prefix": "C" }
+      }
+    },
+    {
+      "name": "《规范汉字表》手册",
+      "repo": "zibiao",
+      "pages": {
+        "content": { "count": 8105, "prefix": "" },
+        "header": { "count": 0, "prefix": "A" },
+        "footer": { "count": 0, "prefix": "C" }
+      }
+    }
+  ]
+}

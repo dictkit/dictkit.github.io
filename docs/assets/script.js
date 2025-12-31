@@ -1,41 +1,68 @@
-const DEBUG = true;
-const PAGE_CONFIGS = {
+const DEBUG = false;
+const DEFAULT_PAGE = {
     content: { count: 1, prefix: "" },
     header: { count: 0, prefix: "A" },
     footer: { count: 0, prefix: "C" },
 };
-
-const FILE_MAPPING = {
-    TOC: "data/toc.json",
-    PINYIN: "data/pinyin.json",
-    CHARS: "data/chars.json",
-    WORDS: "data/words.json",
-};
-
-const REPO_OWNER = "dictkit"
-const URL_TEMPLATES = [
-    "https://cdn.jsdmirror.com/gh/{owner}/{repo}/{filepath}",
-    "https://fastly.jsdelivr.net/gh/{owner}/{repo}/{filepath}",
-    "https://cdn.jsdelivr.net/gh/{owner}/{repo}/{filepath}",
-    "https://ghproxy.net/https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/main/{filepath}",
-    "https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/main/{filepath}",
-]
-
-
-let currentImageIndex = "0001";
-const dictData = {};
-
-// 拼音小写：āáǎàōóǒòēéěèīíǐìūúǔùüǖǘǚǜêê̄ếê̌ềm̄ḿm̀ńňǹẑĉŝŋ
-// 拼音大写：ĀÁǍÀŌÓǑÒĒÉĚÈĪÍǏÌŪÚǓÙÜǕǗǙǛÊÊ̄ẾÊ̌ỀM̄ḾM̀ŃŇǸẐĈŜŊ
-
+const DEFAULT_IMAGE_INDEX = "0001";
+const MAX_RESULTS = 10;
 const PINYIN_MAP = {
+    // 拼音小写：āáǎàōóǒòēéěèīíǐìūúǔùüǖǘǚǜêê̄ếê̌ềm̄ḿm̀ńňǹẑĉŝŋ
+    // 拼音大写：ĀÁǍÀŌÓǑÒĒÉĚÈĪÍǏÌŪÚǓÙÜǕǗǙǛÊÊ̄ẾÊ̌ỀM̄ḾM̀ŃŇǸẐĈŜŊ
     v: "ü",
     ẑ: "zh", ĉ: "zh", ŝ: "zh",
     ŋ: "ng"
 }
+// 词典索引相关的文件
+const FILE_TYPES = {
+    TOC: "toc.json",
+    PINYIN: "pinyin.json",
+    CHARS: "chars.json",
+    WORDS: "words.json"
+};
+const URL_PROXY = [
+    "https://cdn.jsdmirror.com/gh/:owner/:repo/:filepath",
+    "https://fastly.jsdelivr.net/gh/:owner/:repo/:filepath",
+    "https://cdn.jsdelivr.net/gh/:owner/:repo/:filepath",
+    "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath",
+    "https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
+]
+// Repository configuration
+const REPO_CONFIG = {
+    owner: "dictkit",
+    branch: "main",
+    defaultPath: "docs/data",
+    urlTemplates: URL_PROXY
+};
 
+let dictConfigs = [];
+let pageConfigs = DEFAULT_PAGE;
+let currentDictRepo = null;
+let currentDictData = {};
+let currentImageIndex = DEFAULT_IMAGE_INDEX;
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 const pinyinRegExp = new RegExp(pinyinKeys, 'gi');
+
+function getFileList() {
+    return Object.entries(FILE_TYPES).map(([key, filename]) => ({
+        key,
+        path: `${REPO_CONFIG.defaultPath}/${filename}`
+    }));
+}
+
+function buildUrl(template, repo, path) {
+    const params = {
+        owner: REPO_CONFIG.owner,
+        repo: repo,
+        branch: REPO_CONFIG.branch,
+        filepath: path
+    };
+
+    return template.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+        return key in params ? params[key] : `:${key}`;
+    });
+}
+
 
 function fixPinyin(pinyin) {
     // pinyin.replace(/[*·]+|[0-9]+$/g, '')
@@ -48,7 +75,11 @@ function padPage(page) {
 }
 
 function randomIndex() {
-    return padPage(Math.floor(Math.random() * PAGE_CONFIGS.content.count) + 1);
+    return padPage(Math.floor(Math.random() * pageConfigs.content.count) + 1);
+}
+
+function isNumeric(str) {
+    return !isNaN(str) && !isNaN(parseInt(str));
 }
 
 async function loadJSONFile(filePath) {
@@ -64,39 +95,157 @@ async function loadJSONFile(filePath) {
     }
 }
 
-async function initializeDictData(repo) {
-    for (const key in FILE_MAPPING) {
-        const filePath = FILE_MAPPING[key];
-        if (DEBUG) {
-            console.log("loading", key, filePath);
-        }
+function getImageLink(repo, imagePath) {
+    // 本地默认图片
+    const directUrl = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
 
-        const data = await loadJSONFile(filePath);
-        if (data) {
-            dictData[key] = data;
-            if (key === "TOC") {
-                // 转化成dict
-                if (DEBUG) {
-                    console.log("loading", "TOC2");
+    return new Promise(async (resolve) => {
+        const img = new Image();
+        img.src = directUrl;
+        // 尝试加载实际图片
+        for (const template of REPO_CONFIG.urlTemplates) {
+            try {
+                const imageUrl = buildUrl(template, repo, imagePath);
+                const response = await fetch(imageUrl, { method: 'HEAD' });
+                if (response.ok) {
+                    // console.log("Using template URL:", imageUrl);
+                    img.src = imageUrl;
+                    resolve(imageUrl);
+                    return;
                 }
-
-                const data2 = {};
-                data.forEach((item) => {
-                    data2[item.title] = item.page;
-                    if (item.more && item.more.length > 0) {
-                        item.more.forEach((subItem) => {
-                            data2[`${item.title} ${subItem.title}`] = subItem.page;
-                        });
-                    }
-                });
-                dictData["TOC2"] = data2;
+            } catch (error) {
+                console.warn(`Failed to load ${imagePath} from template`, error);
             }
         }
+
+        // console.log("Using fallback URL:", directUrl);
+        resolve(directUrl);
+    });
+}
+
+async function initializeDictSelector() {
+    try {
+        const response = await fetch('dicts.json');
+        const data = await response.json();
+        dictConfigs = data.dicts || [];
+        const dictSelector = document.getElementById('dictSelector');
+        const dictLogo = document.getElementById('dictLogo');
+
+        // Clear existing options
+        dictSelector.innerHTML = '';
+
+        // Add options
+        dictConfigs.forEach((dict) => {
+            const option = document.createElement('option');
+            option.value = dict.repo;
+            option.textContent = dict.name;
+            option.dataset.logo = `assets/logos/${dict.repo}.png`;
+            dictSelector.appendChild(option);
+        });
+
+        // Set default selection and load first dictionary
+        if (dictConfigs.length > 0) {
+            const firstDict = dictConfigs[0];
+            currentDictRepo = firstDict.repo;
+            pageConfigs = firstDict.pages || DEFAULT_PAGE;
+
+            // Set the logo for the first dictionary
+            dictLogo.src = `assets/logos/${currentDictRepo}.png`;
+            dictLogo.alt = `${firstDict.name} Logo`;
+
+            // Load the dictionary data
+            await initializeDictData();
+        }
+
+        // Add change event listener
+        dictSelector.addEventListener('change', async (e) => {
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            const selectedDict = dictConfigs.find(dict => dict.repo === e.target.value);
+
+            if (selectedDict) {
+                currentDictRepo = selectedDict.repo;
+                pageConfigs = selectedDict.pages || DEFAULT_PAGE;
+
+                // Update the logo
+                dictLogo.src = selectedOption.dataset.logo;
+                dictLogo.alt = `${selectedOption.text} Logo`;
+
+                // Load the new dictionary data
+                await initializeDictData();
+
+                // Reset search and UI
+                document.getElementById('searchInput').value = '';
+                document.getElementById('searchSuggestions').innerHTML = '';
+                document.getElementById('search-result').innerHTML = '';
+            }
+            if (DEBUG) {
+                console.log("切换词典", currentDictRepo, pageConfigs);
+            }
+
+            if (currentDictRepo) {
+                currentImageIndex = randomIndex();
+                showImage();
+
+                // Load data and initialize bookmarks
+                await initializeDictData();
+
+                if (bookmarksList) {
+                    bookmarksList.innerHTML = "";
+                    await setupBookmarks(bookmarksList);
+                }
+
+                setupSearch(MAX_RESULTS);
+            } else {
+                console.error("No dictionary selected");
+                if (bookmarksList) {
+                    bookmarksList.innerHTML = "未找到可用的词典，请检查网络连接";
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Failed to load dictionary list:', error);
     }
 }
 
-function isNumeric(str) {
-    return !isNaN(str) && !isNaN(parseInt(str));
+async function initializeDictData() {
+    const repo = currentDictRepo;
+    if (!repo) {
+        console.error('No repository specified');
+        return;
+    }
+    if (DEBUG) {
+        console.log("加载词典", repo);
+    }
+
+    const fileList = getFileList(repo);
+
+    // Try to load each file from available mirrors
+    for (const { key, path } of fileList) {
+        currentDictData[key] = null;
+        let success = false;
+        for (const template of REPO_CONFIG.urlTemplates) {
+            try {
+                const url = buildUrl(template, repo, path);
+                // console.log("加载", url);
+
+                const response = await fetch(url);
+                if (response.ok) {
+                    currentDictData[key] = await response.json();
+                    success = true;
+                    break; // Move to next file if successful
+                }
+            } catch (error) {
+                console.warn(`Failed to load ${path} from ${template}`, error);
+            }
+        }
+
+        if (!success) {
+            console.error(`Failed to load ${path} from all mirrors`);
+            return false;
+        }
+    }
+    // console.log("dictData", dictData)
+    return true;
 }
 
 function searchImage() {
@@ -114,46 +263,99 @@ function searchImage() {
     } else {
         document.getElementById(
             "search-result"
-        ).innerHTML = `检索的拼音（及声调）、字词或正文页码（1～${PAGE_CONFIGS.content.count}）无效，请重新输入!`;
+        ).innerHTML = `检索的拼音（及声调）、字词或正文页码（1～${pageConfigs.content.count}）无效，请重新输入!`;
         // alert("请输入一个有效的拼音或正文页码!");
     }
 }
 
-function showImage() {
+async function showImage() {
+    // console.log("currentImageIndex", currentImageIndex);
     const currentPage = padPage(currentImageIndex);
-    const isExtra = currentPage.startsWith(PAGE_CONFIGS.header.prefix) || currentPage.startsWith(PAGE_CONFIGS.footer.prefix);
+    const isExtra = currentPage.startsWith(pageConfigs.header.prefix) ||
+        currentPage.startsWith(pageConfigs.footer.prefix);
     const imageDir = isExtra ? "extra" : "images";
-    const imageSuffix = "png"; // isExtra ? "webp" :
+    const imageSuffix = "png";
     const imageName = currentPage;
-    document.getElementById("main-image").src = `${imageDir}/${imageName}.${imageSuffix}`;
+    const imagePath = `docs/${imageDir}/${imageName}.${imageSuffix}`;
+
+    const imgElement = document.getElementById("main-image");
+
+    // Show loading state
+    imgElement.style.opacity = '0.5';
+
+    try {
+        const imageUrl = await getImageLink(currentDictRepo, imagePath);
+        imgElement.src = imageUrl;
+        imgElement.onload = () => {
+            imgElement.style.opacity = '1';
+        };
+    } catch (error) {
+        console.error("Error loading image:", error);
+        imgElement.style.opacity = '1';
+    }
+}
+
+async function searchImages(limit) {
+    const searchInput = document.getElementById("searchInput").value.trim();
+    const divResult = document.getElementById("search-result");
+    divResult.innerHTML = "";
+
+    // 输入为空则忽略
+    if (!searchInput) return;
+    // 优先匹配页码
+    if (isNumeric(searchInput)) {
+        const pageNumber = parseInt(searchInput);
+        if (pageNumber > 0 && pageNumber <= pageConfigs.content.count) {
+            currentImageIndex = pageNumber;
+            showImage();
+        } else {
+            divResult.innerHTML = `搜索页面超出范围（1～${pageConfigs.content.count}页）`;
+        }
+        return;
+    }
+
+    // Search in dictionary
+    const results = searchInDictionary(searchInput, limit);
+    if (DEBUG) {
+        console.log(searchInput, results.length);
+    }
+    if (results.length > 0) {
+        // 跳转到第一项
+        currentImageIndex = results[0].page;
+        showImage();
+        document.getElementById("searchSuggestions").classList.remove("visible");
+    } else {
+        // No results found
+        divResult.innerHTML = `未找到与“${searchInput}”相关的页面`;
+    }
 }
 
 function changePage(currentPage, offset = 1) {
-    const header_pages = PAGE_CONFIGS.header.count;
-    const main_pages = header_pages + PAGE_CONFIGS.content.count;
-    const total_pages = main_pages + PAGE_CONFIGS.footer.count;
+    const header_pages = pageConfigs.header.count;
+    const main_pages = header_pages + pageConfigs.content.count;
+    const total_pages = main_pages + pageConfigs.footer.count;
     let currentGroup, currentNum, currentIndex, nextPage;
     currentPage = String(currentPage);
 
     // 解析页面，得到前缀分组并转化成全局索引
-    if (currentPage.startsWith(PAGE_CONFIGS.header.prefix)) {
-        currentGroup = PAGE_CONFIGS.header.prefix;
+    if (currentPage.startsWith(pageConfigs.header.prefix)) {
+        currentGroup = pageConfigs.header.prefix;
         currentNum = parseInt(currentPage.slice(currentGroup.length), 10);
-    } else if (currentPage.startsWith(PAGE_CONFIGS.footer.prefix)) {
-        currentGroup = PAGE_CONFIGS.footer.prefix;
+    } else if (currentPage.startsWith(pageConfigs.footer.prefix)) {
+        currentGroup = pageConfigs.footer.prefix;
     } else {
-        currentGroup = PAGE_CONFIGS.content.prefix;
+        currentGroup = pageConfigs.content.prefix;
     }
     currentNum = parseInt(currentPage.slice(currentGroup.length), 10);
 
     switch (currentGroup) {
-        case PAGE_CONFIGS.header.prefix:
+        case pageConfigs.header.prefix:
             currentIndex = currentNum - 1;
             break;
-        case PAGE_CONFIGS.content.prefix:
+        case pageConfigs.content.prefix:
             currentIndex = header_pages + (currentNum - 1);
             break;
-        case PAGE_CONFIGS.footer.prefix:
+        case pageConfigs.footer.prefix:
             currentIndex = main_pages + (currentNum - 1);
             break;
         default:
@@ -167,13 +369,13 @@ function changePage(currentPage, offset = 1) {
 
     if (targetIndex < header_pages) {
         nextPage = targetIndex + 1;
-        currentGroup = PAGE_CONFIGS.header.prefix;
+        currentGroup = pageConfigs.header.prefix;
     } else if (targetIndex < main_pages) {
         nextPage = targetIndex - header_pages + 1;
-        currentGroup = PAGE_CONFIGS.content.prefix;
+        currentGroup = pageConfigs.content.prefix;
     } else {
         nextPage = targetIndex - main_pages + 1;
-        currentGroup = PAGE_CONFIGS.footer.prefix;;
+        currentGroup = pageConfigs.footer.prefix;;
     }
 
     return `${currentGroup}${padPage(nextPage)}`;
@@ -185,6 +387,7 @@ function changeImage(nextPage) {
     } else {
         currentImageIndex = changePage(currentImageIndex, -1);
     }
+    // console.log("changeImage", nextPage, currentImageIndex)
     showImage();
 }
 
@@ -192,7 +395,7 @@ async function setupBookmarks(bookmarksList) {
     const sidebarToggle = document.getElementById("sidebarToggle");
     const sidebarPopup = document.getElementById("sidebarPopup");
     const closeSidebarPopup = document.getElementById("closeSidebarPopup");
-    const toc = dictData.TOC;
+    const toc = currentDictData.TOC;
     toc.forEach((item) => {
         // 检查是否有子项
         if (item.more && item.more.length > 0) {
@@ -286,40 +489,6 @@ async function setupBookmarks(bookmarksList) {
     });
 }
 
-async function searchImages(limit) {
-    const searchInput = document.getElementById("searchInput").value.trim();
-    const divResult = document.getElementById("search-result");
-    divResult.innerHTML = "";
-
-    // 输入为空则忽略
-    if (!searchInput) return;
-    // 优先匹配页码
-    if (isNumeric(searchInput)) {
-        const pageNumber = parseInt(searchInput);
-        if (pageNumber > 0 && pageNumber <= PAGE_CONFIGS.content.count) {
-            currentImageIndex = pageNumber;
-            showImage();
-        } else {
-            divResult.innerHTML = `搜索页面超出范围（1～${PAGE_CONFIGS.content.count}页）`;
-        }
-        return;
-    }
-
-    // Search in dictionary
-    const results = searchInDictionary(searchInput, limit);
-    if (DEBUG) {
-        console.log(searchInput, results.length);
-    }
-    if (results.length > 0) {
-        // 跳转到第一项
-        currentImageIndex = results[0].page;
-        showImage();
-        document.getElementById("searchSuggestions").classList.remove("visible");
-    } else {
-        // No results found
-        divResult.innerHTML = `未找到与“${searchInput}”相关的页面`;
-    }
-}
 
 function matchWeight(term, query) {
     if (term === query) return 0;
@@ -345,19 +514,19 @@ function searchInDictionary(query, limit) {
     }
 
     for (const { key, type, weight } of searchCategories) {
-        if (!dictData[key]) continue;
+        if (!currentDictData[key]) continue;
         if (key === "PINYIN" && pinyinQuery !== normalizedQuery) {
-            if (pinyinQuery in dictData[key]) {
+            if (pinyinQuery in currentDictData[key]) {
                 results.push({
                     term: pinyinQuery,
-                    page: padPage(dictData[key][pinyinQuery]),
+                    page: padPage(currentDictData[key][pinyinQuery]),
                     type,
                     key,
                     score: weight,
                 });
             }
         }
-        for (const [term, value] of Object.entries(dictData[key])) {
+        for (const [term, value] of Object.entries(currentDictData[key])) {
             if (term.includes(normalizedQuery)) {
                 const pages = Array.isArray(value) ? value : [value];
                 pages.forEach((page) => {
@@ -440,7 +609,6 @@ function highlightSuggestion(direction) {
     items[highlightedIndex].scrollIntoView({ block: "nearest" });
 }
 
-// 
 function setupSearch(limit) {
     const searchInput = document.getElementById("searchInput");
     const searchBtn = document.getElementById("searchBtn");
@@ -546,18 +714,38 @@ document.addEventListener("DOMContentLoaded", function () {
 
 document.addEventListener("DOMContentLoaded", async function () {
     const bookmarksList = document.getElementById("bookmarksList");
-    bookmarksList.innerHTML = "加载目录中……";
-    currentImageIndex = randomIndex();
-    showImage(); // 默认页面
+    if (bookmarksList) {
+        bookmarksList.innerHTML = "加载目录中……";
+    }
 
     try {
-        // Load data and initialize bookmarks
-        await initializeDictData();
-        bookmarksList.innerHTML = "";
-        await setupBookmarks(bookmarksList);
-        setupSearch(8);
+        // Initialize dictionary selector and wait for it to complete
+        await initializeDictSelector();
+
+        // Only proceed if we have a current dictionary selected
+        if (currentDictRepo) {
+            currentImageIndex = randomIndex();
+            showImage(); // 默认页面
+
+            // Load data and initialize bookmarks
+            await initializeDictData();
+
+            if (bookmarksList) {
+                bookmarksList.innerHTML = "";
+                await setupBookmarks(bookmarksList);
+            }
+
+            setupSearch(MAX_RESULTS);
+        } else {
+            console.error("No dictionary selected");
+            if (bookmarksList) {
+                bookmarksList.innerHTML = "未找到可用的词典，请检查网络连接";
+            }
+        }
     } catch (error) {
-        console.error("Error initializing bookmarks:", error);
-        bookmarksList.innerHTML = "加载目录失败，请刷新重试";
+        console.error("Error initializing application:", error);
+        if (bookmarksList) {
+            bookmarksList.innerHTML = "加载失败，请刷新重试";
+        }
     }
 });
