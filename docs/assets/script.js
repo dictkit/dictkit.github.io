@@ -27,12 +27,12 @@ const URL_PROXY = [
     "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath",
     "https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
 ]
+
 // Repository configuration
 const REPO_CONFIG = {
     owner: "dictkit",
     branch: "main",
     defaultPath: "docs/data",
-    urlTemplates: URL_PROXY
 };
 
 let dictConfigs = [];
@@ -42,6 +42,39 @@ let currentDictData = {};
 let currentImageIndex = DEFAULT_IMAGE_INDEX;
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 const pinyinRegExp = new RegExp(pinyinKeys, 'gi');
+
+const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
+const proxyCache = {
+    lastSuccessProxy: null,
+    lastSuccessTime: 0,
+    failedProxies: new Set()
+};
+
+async function getBestProxy() {
+    // 获取候选
+    const now = Date.now();
+    if (proxyCache.lastSuccessProxy &&
+        now - proxyCache.lastSuccessTime < PROXY_CACHE_DURATION) {
+        return proxyCache.lastSuccessProxy;
+    }
+    if (now - proxyCache.lastSuccessTime >= PROXY_CACHE_DURATION) {
+        proxyCache.failedProxies.clear();
+    }
+    return URL_PROXY.find(proxy => !proxyCache.failedProxies.has(proxy)) || URL_PROXY[0];
+}
+
+async function loadJSONFile(filePath) {
+    try {
+        const response = await fetch(filePath);
+        if (!response.ok) {
+            throw new Error(`加载失败: ${filePath} (状态码 ${response.status})`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error(`加载文件出错: ${filePath}`, error);
+        return null;
+    }
+}
 
 function getFileList() {
     return Object.entries(FILE_TYPES).map(([key, filename]) => ({
@@ -63,7 +96,6 @@ function buildUrl(template, repo, path) {
     });
 }
 
-
 function fixPinyin(pinyin) {
     // pinyin.replace(/[*·]+|[0-9]+$/g, '')
     const out = pinyin.replace(pinyinRegExp, match => PINYIN_MAP[match]);
@@ -82,19 +114,6 @@ function isNumeric(str) {
     return !isNaN(str) && !isNaN(parseInt(str));
 }
 
-async function loadJSONFile(filePath) {
-    try {
-        const response = await fetch(filePath);
-        if (!response.ok) {
-            throw new Error(`加载失败: ${filePath} (状态码 ${response.status})`);
-        }
-        return await response.json();
-    } catch (error) {
-        console.error(`加载文件出错: ${filePath}`, error);
-        return null;
-    }
-}
-
 function getImageLink(repo, imagePath) {
     // 本地默认图片
     const directUrl = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
@@ -103,19 +122,21 @@ function getImageLink(repo, imagePath) {
         const img = new Image();
         img.src = directUrl;
         // 尝试加载实际图片
-        for (const template of REPO_CONFIG.urlTemplates) {
-            try {
-                const imageUrl = buildUrl(template, repo, imagePath);
-                const response = await fetch(imageUrl, { method: 'HEAD' });
-                if (response.ok) {
-                    // console.log("Using template URL:", imageUrl);
-                    img.src = imageUrl;
-                    resolve(imageUrl);
-                    return;
-                }
-            } catch (error) {
-                console.warn(`Failed to load ${imagePath} from template`, error);
+        const proxy = await getBestProxy();
+        try {
+            const imageUrl = buildUrl(proxy, repo, imagePath);
+            const response = await fetch(imageUrl, { method: 'HEAD' });
+            if (response.ok) {
+                proxyCache.lastSuccessProxy = proxy;
+                proxyCache.lastSuccessTime = Date.now();
+                proxyCache.failedProxies.delete(proxy);
+                img.src = imageUrl;
+                resolve(imageUrl);
+                return;
             }
+        } catch (error) {
+            console.warn(`Failed to load image from ${proxy}`, error);
+            proxyCache.failedProxies.add(proxy);
         }
 
         // console.log("Using fallback URL:", directUrl);
@@ -125,8 +146,7 @@ function getImageLink(repo, imagePath) {
 
 async function initializeDictSelector() {
     try {
-        const response = await fetch('dicts.json');
-        const data = await response.json();
+        const data = await loadJSONFile('dicts.json');
         dictConfigs = data.dicts || [];
         const dictSelector = document.getElementById('dictSelector');
         const dictLogo = document.getElementById('dictLogo');
@@ -207,6 +227,30 @@ async function initializeDictSelector() {
     }
 }
 
+async function initializeDictionaryView() {
+    if (!currentDictRepo) {
+        console.error("No dictionary selected");
+        if (bookmarksList) {
+            bookmarksList.innerHTML = "未找到可用的词典，请检查网络连接";
+        }
+        return false;
+    }
+
+    currentImageIndex = randomIndex();
+    showImage(); // 默认页面
+
+    // Load data and initialize bookmarks
+    await initializeDictData();
+
+    if (bookmarksList) {
+        bookmarksList.innerHTML = "";
+        await setupBookmarks(bookmarksList);
+    }
+
+    setupSearch(MAX_RESULTS);
+    return true;
+}
+
 async function initializeDictData() {
     const repo = currentDictRepo;
     if (!repo) {
@@ -223,20 +267,21 @@ async function initializeDictData() {
     for (const { key, path } of fileList) {
         currentDictData[key] = null;
         let success = false;
-        for (const template of REPO_CONFIG.urlTemplates) {
-            try {
-                const url = buildUrl(template, repo, path);
-                // console.log("加载", url);
-
-                const response = await fetch(url);
-                if (response.ok) {
-                    currentDictData[key] = await response.json();
-                    success = true;
-                    break; // Move to next file if successful
-                }
-            } catch (error) {
-                console.warn(`Failed to load ${path} from ${template}`, error);
+        const proxy = await getBestProxy();
+        try {
+            const url = buildUrl(proxy, repo, path);
+            const response = await fetch(url);
+            if (response.ok) {
+                currentDictData[key] = await response.json();
+                proxyCache.lastSuccessProxy = proxy;
+                proxyCache.lastSuccessTime = Date.now();
+                proxyCache.failedProxies.delete(proxy);
+                success = true;
+                continue;
             }
+        } catch (error) {
+            console.warn(`Failed to load ${path} from ${proxy}`, error);
+            proxyCache.failedProxies.add(proxy);
         }
 
         if (!success) {
@@ -489,7 +534,6 @@ async function setupBookmarks(bookmarksList) {
     });
 }
 
-
 function matchWeight(term, query) {
     if (term === query) return 0;
     else if (term.startsWith(query)) return 1;
@@ -719,29 +763,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     try {
-        // Initialize dictionary selector and wait for it to complete
         await initializeDictSelector();
-
-        // Only proceed if we have a current dictionary selected
-        if (currentDictRepo) {
-            currentImageIndex = randomIndex();
-            showImage(); // 默认页面
-
-            // Load data and initialize bookmarks
-            await initializeDictData();
-
-            if (bookmarksList) {
-                bookmarksList.innerHTML = "";
-                await setupBookmarks(bookmarksList);
-            }
-
-            setupSearch(MAX_RESULTS);
-        } else {
-            console.error("No dictionary selected");
-            if (bookmarksList) {
-                bookmarksList.innerHTML = "未找到可用的词典，请检查网络连接";
-            }
-        }
+        await initializeDictionaryView();
     } catch (error) {
         console.error("Error initializing application:", error);
         if (bookmarksList) {

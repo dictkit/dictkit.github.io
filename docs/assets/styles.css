@@ -515,3 +515,60 @@ header h1 {
 .dict-selector::-ms-expand {
   display: none;
 }
+
+/* Search suggestions */
+#searchSuggestions {
+  position: absolute;
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: none;
+  z-index: 1000;
+}
+
+#searchSuggestions.visible {
+  display: block;
+}
+
+.suggestion-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+}
+
+.suggestion-item:hover,
+.suggestion-item.highlighted {
+  background-color: #f5f5f5;
+}
+
+.suggestion-type {
+  font-size: 0.8em;
+  color: #666;
+  min-width: 40px;
+  display: inline-block;
+}
+
+.suggestion-text {
+  flex: 1;
+  margin: 0 10px;
+}
+
+.suggestion-page {
+  font-size: 0.9em;
+  color: #888;
+}
+
+.loading,
+.no-results {
+  padding: 10px;
+  color: #666;
+  font-style: italic;
+  text-align: center;
+}
