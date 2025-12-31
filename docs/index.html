@@ -23,14 +23,15 @@
             <!-- 下拉选择词典 -->
             <div class="dictionary-selector">
                 <div class="dict-selector-container">
-                    <img id="dictLogo" src="" alt="Dictionary Logo" class="dict-logo">
+                    <img id="dictLogo" src="assets/logo2.png" alt="Dictionary Logo" class="dict-logo">
                     <select id="dictSelector" class="dict-selector" title="选择词典">
                         <!-- Will be populated by JavaScript -->
                     </select>
                 </div>
             </div>
             <div class="search-input-container">
-                <input type="text" class="search-input" id="searchInput" placeholder="请输入拼音、字词或正文页码……" autocomplete="off" />
+                <input type="text" class="search-input" id="searchInput" placeholder="请输入拼音、字词或正文页码……"
+                    autocomplete="off" />
                 <div class="search-suggestions" id="searchSuggestions"></div>
             </div>
 
@@ -58,15 +59,21 @@
     <div class="popup-overlay" id="pinyinPopup">
         <div class="popup-content">
             <div class="popup-header">
-                <h3>拼音声调速查</h3>
+                <h3>提示</h3>
                 <button class="close-popup" id="closePopup">&times;</button>
             </div>
             <div class="search-tip">
+                <h4>拼音声调速查</h4>
                 <ul>
                     <li>āáǎà ōóǒò ēéěè</li>
                     <li>īíǐì ūúǔù üǖǘǚǜ</li>
                     <li>êê̄ếê̌ề m̄ḿm̀ ńňǹ</li>
                     <li>ẑĉŝ ŋ</li>
+                </ul>
+                <h4>上下页切换</h4>
+                <ul>
+                    <li>键盘左右方向键</li>
+                    <li>点击页面两侧箭头区</li>
                 </ul>
             </div>
         </div>
@@ -81,7 +88,7 @@
     </div>
 
     <section class="result-container">
-        <img id="main-image" alt="Image">
+        <img id="main-image" alt="Image" src="assets/images/0001.png" style="opacity: 0.3;">
         <div id="prevBtn" class="nav-arrow">
             <span class="icon icon-arrow-left"></span>
         </div>

@@ -27,12 +27,17 @@ const URL_PROXY = [
     "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath",
     "https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
 ]
+const DEFAULT_IMAGE = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
 
 // Repository configuration
 const REPO_CONFIG = {
     owner: "dictkit",
     branch: "main",
+    basePath: "docs",
     defaultPath: "docs/data",
+    imageDir: "docs/images",
+    imageExtra: "docs/extra",
+    imageSuffix: "png",
 };
 
 let dictConfigs = [];
@@ -116,7 +121,7 @@ function isNumeric(str) {
 
 function getImageLink(repo, imagePath) {
     // 本地默认图片
-    const directUrl = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
+    const directUrl = DEFAULT_IMAGE;
 
     return new Promise(async (resolve) => {
         const img = new Image();
@@ -318,25 +323,19 @@ async function showImage() {
     const currentPage = padPage(currentImageIndex);
     const isExtra = currentPage.startsWith(pageConfigs.header.prefix) ||
         currentPage.startsWith(pageConfigs.footer.prefix);
-    const imageDir = isExtra ? "extra" : "images";
-    const imageSuffix = "png";
-    const imageName = currentPage;
-    const imagePath = `docs/${imageDir}/${imageName}.${imageSuffix}`;
+    const imageDir = isExtra ? REPO_CONFIG.imageExtra : REPO_CONFIG.imageDir;
+    const imagePath = `${imageDir}/${currentPage}.${REPO_CONFIG.imageSuffix}`;
 
     const imgElement = document.getElementById("main-image");
-
-    // Show loading state
-    imgElement.style.opacity = '0.5';
-
+    imgElement.style.opacity = '0.3';
     try {
         const imageUrl = await getImageLink(currentDictRepo, imagePath);
         imgElement.src = imageUrl;
-        imgElement.onload = () => {
-            imgElement.style.opacity = '1';
-        };
+        imgElement.onload = () => imgElement.style.opacity = '1';
     } catch (error) {
         console.error("Error loading image:", error);
-        imgElement.style.opacity = '1';
+        imgElement.src = DEFAULT_IMAGE;
+        imgElement.style.opacity = '0.3';
     }
 }
 
@@ -560,7 +559,7 @@ function searchInDictionary(query, limit) {
     for (const { key, type, weight } of searchCategories) {
         if (!currentDictData[key]) continue;
         if (key === "PINYIN" && pinyinQuery !== normalizedQuery) {
-            if (pinyinQuery in currentDictData[key]) {
+            if (currentDictData[key].startsWith(pinyinQuery)) {
                 results.push({
                     term: pinyinQuery,
                     page: padPage(currentDictData[key][pinyinQuery]),
@@ -571,7 +570,11 @@ function searchInDictionary(query, limit) {
             }
         }
         for (const [term, value] of Object.entries(currentDictData[key])) {
-            if (term.includes(normalizedQuery)) {
+            // 限制拼音必须是开头匹配
+            if (
+                (term.includes(normalizedQuery) && key !== "PINYIN") ||
+                (term.startsWith(normalizedQuery) && key === "PINYIN")
+            ) {
                 const pages = Array.isArray(value) ? value : [value];
                 pages.forEach((page) => {
                     results.push({
@@ -582,16 +585,14 @@ function searchInDictionary(query, limit) {
                         score: matchWeight(term, normalizedQuery) + weight,
                     });
                 });
-
-                if (results.length >= maxLimit) break; // 超过2倍则截断
+                if (results.length >= maxLimit) break; // 超过N倍则截断
             }
         }
-
         if (results.length >= maxLimit) break;
     }
 
     // Sort by score and limit results
-    return results.sort((a, b) => a.score - b.score || a.page - b.page).slice(0, limit);
+    return results.sort((a, b) => a.score - b.score || a.page - b.page);
 }
 
 function showSearchSuggestions(query, limit) {
@@ -610,9 +611,9 @@ function showSearchSuggestions(query, limit) {
 
     // Clear previous suggestions
     suggestionsContainer.innerHTML = "";
-
+    const topResults = results.slice(0, limit);
     // 候选匹配
-    results.forEach((result, index) => {
+    topResults.forEach((result, index) => {
         const item = document.createElement("div");
         item.className = "suggestion-item" + (index === highlightedIndex ? " highlighted" : "");
         item.innerHTML = `
@@ -625,9 +626,15 @@ function showSearchSuggestions(query, limit) {
             showImage();
             suggestionsContainer.classList.remove("visible");
         });
-
         suggestionsContainer.appendChild(item);
     });
+
+    if (results.length > limit) {
+        const item = document.createElement("div");
+        item.className = "suggestion-item";
+        item.innerHTML = "<span>……</span>";
+        suggestionsContainer.appendChild(item);
+    }
 
     suggestionsContainer.classList.add("visible");
 }
