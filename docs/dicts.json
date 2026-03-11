@@ -1,39 +1,61 @@
 {
+  "config": {
+    "owner": "dictkit",
+    "branch": "main",
+    "basePath": "docs",
+    "dataPath": "docs/data",
+    "imageDir": "docs/images",
+    "imageExtra": "docs/extra",
+    "imageSuffix": "png"
+  },
+  "files": [
+    {"path": "pinyin.json", "key": "pinyin", "type": "拼音", "weight": 0.0},
+    {"path": "chars.json", "key": "chars", "type": "单字", "weight": 0.1},
+    {"path": "words.json", "key": "words", "type": "词语", "weight": 0.2},
+    {"path": "toc.json", "key": "toc", "type": "目录", "weight": 0.3}
+  ],
+  "urls": [
+    "https://cdn.jsdmirror.com/gh/:owner/:repo/:filepath",
+    "https://fastly.jsdelivr.net/gh/:owner/:repo/:filepath",
+    "https://cdn.jsdelivr.net/gh/:owner/:repo/:filepath",
+    "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath",
+    "https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
+  ],
   "dicts": [
     {
       "name": "现代汉语词典",
       "repo": "xiandai",
       "pages": {
-        "content": { "count": 1766, "prefix": "" },
-        "header": { "count": 94, "prefix": "A" },
-        "footer": { "count": 37, "prefix": "C" }
+        "content": {"count": 1766, "prefix": ""},
+        "header": {"count": 94, "prefix": "A"},
+        "footer": {"count": 37, "prefix": "C"}
       }
     },
     {
       "name": "现代汉语规范词典",
       "repo": "guifan",
       "pages": {
-        "content": { "count": 1858, "prefix": "" },
-        "header": { "count": 100, "prefix": "A" },
-        "footer": { "count": 46, "prefix": "C" }
+        "content": {"count": 1858, "prefix": ""},
+        "header": {"count": 100, "prefix": "A"},
+        "footer": {"count": 46, "prefix": "C"}
       }
     },
     {
       "name": "王力古汉语字典",
       "repo": "ghy",
       "pages": {
-        "content": { "count": 1792, "prefix": "" },
-        "header": { "count": 115, "prefix": "A" },
-        "footer": { "count": 26, "prefix": "C" }
+        "content": {"count": 1792, "prefix": ""},
+        "header": {"count": 115, "prefix": "A"},
+        "footer": {"count": 26, "prefix": "C"}
       }
     },
     {
       "name": "《规范汉字表》手册",
       "repo": "zibiao",
       "pages": {
-        "content": { "count": 8105, "prefix": "" },
-        "header": { "count": 0, "prefix": "A" },
-        "footer": { "count": 0, "prefix": "C" }
+        "content": {"count": 8105, "prefix": ""},
+        "header": {"count": 0, "prefix": "A"},
+        "footer": {"count": 0, "prefix": "C"}
       }
     }
   ]

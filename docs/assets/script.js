@@ -13,40 +13,19 @@ const PINYIN_MAP = {
     ẑ: "zh", ĉ: "zh", ŝ: "zh",
     ŋ: "ng"
 }
-// 词典索引相关的文件
-const FILE_TYPES = {
-    TOC: "toc.json",
-    PINYIN: "pinyin.json",
-    CHARS: "chars.json",
-    WORDS: "words.json"
-};
-const URL_PROXY = [
-    "https://cdn.jsdmirror.com/gh/:owner/:repo/:filepath",
-    "https://fastly.jsdelivr.net/gh/:owner/:repo/:filepath",
-    "https://cdn.jsdelivr.net/gh/:owner/:repo/:filepath",
-    "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath",
-    "https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
-]
 const DEFAULT_IMAGE = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
 
-// Repository configuration
-const REPO_CONFIG = {
-    owner: "dictkit",
-    branch: "main",
-    basePath: "docs",
-    defaultPath: "docs/data",
-    imageDir: "docs/images",
-    imageExtra: "docs/extra",
-    imageSuffix: "png",
-};
-
-let dictConfigs = [];
-let pageConfigs = DEFAULT_PAGE;
+let currentConfig = {};
 let currentDictRepo = null;
 let currentDictData = {};
+let urlProxyList = [];
+let fileConfigs = [];
+let pageConfigs = DEFAULT_PAGE;
 let currentImageIndex = DEFAULT_IMAGE_INDEX;
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 const pinyinRegExp = new RegExp(pinyinKeys, 'gi');
+const keyToc = "toc";
+const keyPinyin = "pinyin";
 
 const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
 const proxyCache = {
@@ -65,7 +44,7 @@ async function getBestProxy() {
     if (now - proxyCache.lastSuccessTime >= PROXY_CACHE_DURATION) {
         proxyCache.failedProxies.clear();
     }
-    return URL_PROXY.find(proxy => !proxyCache.failedProxies.has(proxy)) || URL_PROXY[0];
+    return urlProxyList.find(proxy => !proxyCache.failedProxies.has(proxy)) || urlProxyList[0];
 }
 
 async function loadJSONFile(filePath) {
@@ -81,22 +60,22 @@ async function loadJSONFile(filePath) {
     }
 }
 
-function getFileList() {
-    return Object.entries(FILE_TYPES).map(([key, filename]) => ({
-        key,
-        path: `${REPO_CONFIG.defaultPath}/${filename}`
+function getFileList(files, dirPath) {
+    return files.map(item => ({
+        key: item.key,
+        path: `${dirPath}/${item.path}`
     }));
 }
 
-function buildUrl(template, repo, path) {
+function buildUrl(urlTemplate, owner, repo, branch, path) {
     const params = {
-        owner: REPO_CONFIG.owner,
+        owner: owner,
         repo: repo,
-        branch: REPO_CONFIG.branch,
+        branch: branch,
         filepath: path
     };
 
-    return template.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+    return urlTemplate.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
         return key in params ? params[key] : `:${key}`;
     });
 }
@@ -119,7 +98,7 @@ function isNumeric(str) {
     return !isNaN(str) && !isNaN(parseInt(str));
 }
 
-function getImageLink(repo, imagePath) {
+function getImageLink(owner, repo, branch, imagePath) {
     // 本地默认图片
     const directUrl = DEFAULT_IMAGE;
 
@@ -129,7 +108,7 @@ function getImageLink(repo, imagePath) {
         // 尝试加载实际图片
         const proxy = await getBestProxy();
         try {
-            const imageUrl = buildUrl(proxy, repo, imagePath);
+            const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
             const response = await fetch(imageUrl, { method: 'HEAD' });
             if (response.ok) {
                 proxyCache.lastSuccessProxy = proxy;
@@ -152,7 +131,11 @@ function getImageLink(repo, imagePath) {
 async function initializeDictSelector() {
     try {
         const data = await loadJSONFile('dicts.json');
-        dictConfigs = data.dicts || [];
+        const dictConfigs = data.dicts || [];
+        urlProxyList = data.urls || [];
+        currentConfig = data.config || {}
+        fileConfigs = data.files || [];
+
         const dictSelector = document.getElementById('dictSelector');
         const dictLogo = document.getElementById('dictLogo');
 
@@ -204,7 +187,7 @@ async function initializeDictSelector() {
                 document.getElementById('search-result').innerHTML = '';
             }
             if (DEBUG) {
-                console.log("切换词典", currentDictRepo, pageConfigs);
+                console.log("Switch dict", currentDictRepo, pageConfigs);
             }
 
             if (currentDictRepo) {
@@ -258,15 +241,20 @@ async function initializeDictionaryView() {
 
 async function initializeDictData() {
     const repo = currentDictRepo;
+    const owner = currentConfig.owner;
+    const branch = currentConfig.branch;
+    const dataPath = currentConfig.dataPath;
+    const files = fileConfigs;
+
     if (!repo) {
         console.error('No repository specified');
         return;
     }
     if (DEBUG) {
-        console.log("加载词典", repo);
+        console.log("Loading dict", repo);
     }
 
-    const fileList = getFileList(repo);
+    const fileList = getFileList(files, dataPath);
 
     // Try to load each file from available mirrors
     for (const { key, path } of fileList) {
@@ -274,7 +262,8 @@ async function initializeDictData() {
         let success = false;
         const proxy = await getBestProxy();
         try {
-            const url = buildUrl(proxy, repo, path);
+            const url = buildUrl(proxy, owner, repo, branch, path);
+
             const response = await fetch(url);
             if (response.ok) {
                 currentDictData[key] = await response.json();
@@ -323,13 +312,17 @@ async function showImage() {
     const currentPage = padPage(currentImageIndex);
     const isExtra = currentPage.startsWith(pageConfigs.header.prefix) ||
         currentPage.startsWith(pageConfigs.footer.prefix);
-    const imageDir = isExtra ? REPO_CONFIG.imageExtra : REPO_CONFIG.imageDir;
-    const imagePath = `${imageDir}/${currentPage}.${REPO_CONFIG.imageSuffix}`;
+    const imageDir = isExtra ? currentConfig.imageExtra : currentConfig.imageDir;
+    const imagePath = `${imageDir}/${currentPage}.${currentConfig.imageSuffix}`;
+    const repo = currentDictRepo;
+    const owner = currentConfig.owner;
+    const branch = currentConfig.branch;
+
 
     const imgElement = document.getElementById("main-image");
     imgElement.style.opacity = '0.3';
     try {
-        const imageUrl = await getImageLink(currentDictRepo, imagePath);
+        const imageUrl = await getImageLink(owner, repo, branch, imagePath);
         imgElement.src = imageUrl;
         imgElement.onload = () => imgElement.style.opacity = '1';
     } catch (error) {
@@ -439,8 +432,8 @@ async function setupBookmarks(bookmarksList) {
     const sidebarToggle = document.getElementById("sidebarToggle");
     const sidebarPopup = document.getElementById("sidebarPopup");
     const closeSidebarPopup = document.getElementById("closeSidebarPopup");
-    const toc = currentDictData.TOC;
-    toc.forEach((item) => {
+    const tocData = currentDictData[keyToc] || [];
+    tocData.forEach((item) => {
         // 检查是否有子项
         if (item.more && item.more.length > 0) {
             // 创建分组容器
@@ -545,12 +538,7 @@ function searchInDictionary(query, limit) {
     const maxLimit = limit * 3;
     const normalizedQuery = query.toLowerCase().trim(); // TODO 拼音兼容
     const pinyinQuery = fixPinyin(normalizedQuery);
-    const searchCategories = [
-        { key: "PINYIN", type: "拼音", weight: 0.0 },
-        { key: "CHARS", type: "单字", weight: 0.1 },
-        { key: "WORDS", type: "词语", weight: 0.2 },
-        { key: "TOC2", type: "目录", weight: 0.3 },
-    ];
+    const searchCategories = fileConfigs;
 
     if (DEBUG) {
         console.log("query", normalizedQuery, pinyinQuery);
@@ -558,7 +546,7 @@ function searchInDictionary(query, limit) {
 
     for (const { key, type, weight } of searchCategories) {
         if (!currentDictData[key]) continue;
-        if (key === "PINYIN" && pinyinQuery !== normalizedQuery) {
+        if (key === keyPinyin && pinyinQuery !== normalizedQuery) {
             if (currentDictData[key].startsWith(pinyinQuery)) {
                 results.push({
                     term: pinyinQuery,
@@ -572,8 +560,8 @@ function searchInDictionary(query, limit) {
         for (const [term, value] of Object.entries(currentDictData[key])) {
             // 限制拼音必须是开头匹配
             if (
-                (term.includes(normalizedQuery) && key !== "PINYIN") ||
-                (term.startsWith(normalizedQuery) && key === "PINYIN")
+                (term.includes(normalizedQuery) && key !== keyPinyin) ||
+                (term.startsWith(normalizedQuery) && key === keyPinyin)
             ) {
                 const pages = Array.isArray(value) ? value : [value];
                 pages.forEach((page) => {
