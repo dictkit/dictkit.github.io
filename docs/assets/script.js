@@ -429,11 +429,12 @@ async function searchImages(limit) {
     // 优先匹配页码
     if (isNumeric(searchInput)) {
         const pageNumber = parseInt(searchInput);
-        if (pageNumber > 0 && pageNumber <= pageConfigs.content.count) {
+        const maxPage = pageConfigs.content.count;
+        if (pageNumber > 0 && pageNumber <= maxPage) {
             currentImageIndex = pageNumber;
             await showImage();
         } else {
-            divResult.innerHTML = `搜索页面超出范围（1～${pageConfigs.content.count}页）`;
+            divResult.innerHTML = `搜索页面超出范围（1～${maxPage}页）`;
         }
         return;
     }
@@ -840,10 +841,13 @@ function updateURLParameters() {
 
 async function initializeFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
-    const dictParam = urlParams.get("dict");
+    let dictParam = urlParams.get("dict");
     const pageParam = urlParams.get("page");
     const queryParam = urlParams.get("query");
 
+    if (!Object.hasOwn(repoConfigs, dictParam)) {
+        dictParam = Object.keys(repoConfigs)[0];
+    }
     if (dictParam in repoConfigs) {
         const dictSelector = document.getElementById("dictSelector");
         const dictLogo = document.getElementById("dictLogo");
@@ -854,7 +858,7 @@ async function initializeFromURL() {
             dictSelector.value = dictParam;
             dictLogo.src = repoConfigs[currentDictRepo].logo;
             dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
-            dictSelector.dispatchEvent( new Event("change", { bubbles: true }));
+            dictSelector.dispatchEvent(new Event("change", { bubbles: true }));
         }
     }
 
@@ -867,9 +871,23 @@ async function initializeFromURL() {
         const searchBtn = document.getElementById("searchBtn");
         searchBtn.click();
     } else if (pageParam) {
-        currentImageIndex = pageParam;
-        await showImage();
+        let isSuccess = false;
+        if (isNumeric(pageParam)) {
+            const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
+            const maxPage = pageConfigs.content.count;
+            const pageNumber = parseInt(pageParam);
+            if (pageNumber > 0 && pageNumber <= maxPage) {
+                currentImageIndex = padPage(pageNumber);
+                await showImage();
+                isSuccess = true;
+            }
+        }
+        if (!isSuccess) {
+            const divResult = document.getElementById("searchResult");
+            divResult.innerHTML = "页码参数格式异常";
+        }
     }
+    // updateURLParameters();
 }
 
 document.addEventListener("DOMContentLoaded", async function () {
@@ -958,8 +976,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     try {
         await initializeDictSelector();
-        await showImage();
-
     } catch (error) {
         console.error("Error initializing application:", error);
         if (bookmarksList) {
