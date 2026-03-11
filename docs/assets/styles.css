@@ -28,7 +28,7 @@
     --shadow-color: rgba(0, 0, 0, 0.5);
   }
 
-  #main-image[src*="images/"] {
+  #mainImage[src*="images/"] {
     filter: invert(90%);
     transition: filter 0.3s ease;
   }
@@ -179,7 +179,6 @@ header h1 {
 .action-btn {
   background: none;
   border: none;
-  /* color: #666; */
   width: 35px;
   height: 35px;
   /* border-radius: 50%; */
@@ -365,9 +364,10 @@ header h1 {
   opacity: 0.7;
 }
 
-#search-result {
+#searchResult {
   color: var(--header-color);
   font-weight: bolder;
+  padding: 1rem 0;
 }
 
 .result-container {
@@ -383,7 +383,7 @@ header h1 {
   max-height: 20vh;
 }
 
-#main-image {
+#mainImage {
   max-width: 100%;
   max-height: 85vh;
 }
@@ -472,59 +472,10 @@ header h1 {
   display: none;
 }
 
-/* Search suggestions */
-#searchSuggestions {
-  position: absolute;
-  width: 100%;
-  max-height: 300px;
-  overflow-y: auto;
-  background: white;
-  border: 1px solid #ddd;
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  display: none;
-  z-index: 1000;
-}
-
-#searchSuggestions.visible {
-  display: block;
-}
-
-.suggestion-item {
-  padding: 8px 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid #eee;
-}
-
-.suggestion-item:hover,
-.suggestion-item.highlighted {
-  background-color: #f5f5f5;
-}
-
-.suggestion-type {
-  font-size: 0.8em;
-  color: #666;
-  min-width: 40px;
-  display: inline-block;
-}
-
-.suggestion-text {
-  flex: 1;
-  margin: 0 10px;
-}
-
-.suggestion-page {
-  font-size: 0.9em;
-  color: #888;
-}
-
 .loading,
 .no-results {
   padding: 10px;
-  color: #666;
+  color: var(--text-color);
   font-style: italic;
   text-align: center;
 }
@@ -534,14 +485,15 @@ header h1 {
 .popup-header h3,
 .search-tip h4,
 .sidebar,
-.dict-selector {
+.dict-selector,
+#searchResult {
   font-family: var(--font);
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .search-input,
-  #search-result,
+  #searchResult,
   .sidebar-header h3,
   .sidebar-content {
     font-size: smaller;

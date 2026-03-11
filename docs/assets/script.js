@@ -14,13 +14,17 @@ const PINYIN_MAP = {
     ŋ: "ng"
 }
 const DEFAULT_IMAGE = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
+const DATA_FILE = 'dicts.json';
 
-let currentConfig = {};
-let currentDictRepo = null;
-let currentDictData = {};
+let fileInfoList = [];
 let urlProxyList = [];
-let fileConfigs = [];
-let pageConfigs = DEFAULT_PAGE;
+let metaConfigs = {};
+let repoConfigs = {};
+let currentDictRepo = null;
+
+// let currentDictData = {};
+// let pageConfigs = DEFAULT_PAGE;
+
 let currentImageIndex = DEFAULT_IMAGE_INDEX;
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 const pinyinRegExp = new RegExp(pinyinKeys, 'gi');
@@ -31,7 +35,30 @@ const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
 const proxyCache = {
     lastSuccessProxy: null,
     lastSuccessTime: 0,
-    failedProxies: new Set()
+    failedProxies: new Set(),
+
+    updateProxy(proxy) {
+        this.lastSuccessProxy = proxy;
+        this.lastSuccessTime = new Date();
+        this.failedProxies.delete(proxy);
+    },
+
+    addFail(proxy) {
+        this.failedProxies.add(proxy);
+    },
+
+    getBestProxy(urls) {
+        // 获取候选
+        const now = Date.now();
+        if (this.lastSuccessProxy &&
+            now - this.lastSuccessTime < PROXY_CACHE_DURATION) {
+            return this.lastSuccessProxy;
+        }
+        if (now - this.lastSuccessTime >= PROXY_CACHE_DURATION) {
+            this.failedProxies.clear();
+        }
+        return urls.find(proxy => !this.failedProxies.has(proxy)) || urls[0];
+    }
 };
 
 const IMAGE_CACHE_CONFIG = {
@@ -100,18 +127,7 @@ const imageCache = {
     }
 };
 
-async function getBestProxy() {
-    // 获取候选
-    const now = Date.now();
-    if (proxyCache.lastSuccessProxy &&
-        now - proxyCache.lastSuccessTime < PROXY_CACHE_DURATION) {
-        return proxyCache.lastSuccessProxy;
-    }
-    if (now - proxyCache.lastSuccessTime >= PROXY_CACHE_DURATION) {
-        proxyCache.failedProxies.clear();
-    }
-    return urlProxyList.find(proxy => !proxyCache.failedProxies.has(proxy)) || urlProxyList[0];
-}
+
 
 async function loadJSONFile(filePath) {
     try {
@@ -156,10 +172,6 @@ function padPage(page) {
     return String(page).padStart(4, "0");
 }
 
-function randomIndex() {
-    return padPage(Math.floor(Math.random() * pageConfigs.content.count) + 1);
-}
-
 function isNumeric(str) {
     return !isNaN(str) && !isNaN(parseInt(str));
 }
@@ -197,20 +209,18 @@ async function _loadImageFromRemote(owner, repo, branch, imagePath) {
     const defaultImageUrl = DEFAULT_IMAGE;
 
     // Try to load actual image
-    const proxy = await getBestProxy();
+    const proxy = proxyCache.getBestProxy(urlProxyList);
     const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
 
     try {
         const response = await fetch(imageUrl, { method: 'HEAD' });
         if (response.ok) {
-            proxyCache.lastSuccessProxy = proxy;
-            proxyCache.lastSuccessTime = Date.now();
-            proxyCache.failedProxies.delete(proxy);
+            proxyCache.updateProxy(proxy);
             return imageUrl;
         }
     } catch (error) {
         console.warn(`Failed to load image from ${proxy}`, error);
-        proxyCache.failedProxies.add(proxy);
+        proxyCache.addFail(proxy);
     }
 
     return defaultImageUrl;
@@ -218,11 +228,11 @@ async function _loadImageFromRemote(owner, repo, branch, imagePath) {
 
 async function initializeDictSelector() {
     try {
-        const data = await loadJSONFile('dicts.json');
+        const data = await loadJSONFile(DATA_FILE);
         const dictConfigs = data.dicts || [];
         urlProxyList = data.urls || [];
-        currentConfig = data.config || {}
-        fileConfigs = data.files || [];
+        metaConfigs = data.config || {}
+        fileInfoList = data.files || [];
 
         const dictSelector = document.getElementById('dictSelector');
         const dictLogo = document.getElementById('dictLogo');
@@ -232,8 +242,9 @@ async function initializeDictSelector() {
 
         // Add options
         dictConfigs.forEach((dict) => {
+            const repo = dict.repo;
             const option = document.createElement('option');
-            option.value = dict.repo;
+            option.value = repo;
             option.textContent = dict.name;
             option.dataset.logo = `assets/logos/${dict.repo}.png`;
             dictSelector.appendChild(option);
@@ -243,14 +254,27 @@ async function initializeDictSelector() {
         if (dictConfigs.length > 0) {
             const firstDict = dictConfigs[0];
             currentDictRepo = firstDict.repo;
-            pageConfigs = firstDict.pages || DEFAULT_PAGE;
+
+            // 获取所有词典信息
+            const promises = dictConfigs.map(async (dict) => {
+                const data = await initializeDictData(dict.repo);
+                return { repo: dict.repo, data };
+            });
+            const results = await Promise.all(promises);
+
+            repoConfigs = dictConfigs.reduce((acc, item) => {
+                acc[item.repo] = item;
+                return acc
+            }, {});
+            results.forEach(item => {
+                repoConfigs[item.repo] = { ...repoConfigs[item.repo], ...item.data };
+            });
+            // console.log(Object.keys(repoConfigs), repoConfigs);
 
             // Set the logo for the first dictionary
             dictLogo.src = `assets/logos/${currentDictRepo}.png`;
             dictLogo.alt = `${firstDict.name} Logo`;
-
-            // Load the dictionary data
-            await initializeDictData();
+            await initializeDictionaryView();
         }
 
         // Add change event listener
@@ -258,48 +282,21 @@ async function initializeDictSelector() {
             const selectedOption = e.target.options[e.target.selectedIndex];
             const selectedDict = dictConfigs.find(dict => dict.repo === e.target.value);
 
-            if (selectedDict) {
-                currentDictRepo = selectedDict.repo;
-                pageConfigs = selectedDict.pages || DEFAULT_PAGE;
-
-                // Clear image cache for previous dictionary
-                imageCache.clearCurrentDict();
-
-                // Update the logo
-                dictLogo.src = selectedOption.dataset.logo;
-                dictLogo.alt = `${selectedDict.name} Logo`;
-
-                // Load the new dictionary data
-                await initializeDictData();
-
-                // Reset search and UI
-                document.getElementById('searchInput').value = '';
-                document.getElementById('searchSuggestions').innerHTML = '';
-                document.getElementById('search-result').innerHTML = '';
+            if (!selectedDict) {
+                return
             }
+            currentDictRepo = selectedDict.repo;
             if (DEBUG) {
-                console.log("Switch dict", currentDictRepo, pageConfigs);
+                console.log("Switch dict", currentDictRepo);
             }
 
-            if (currentDictRepo) {
-                currentImageIndex = randomIndex();
-                showImage();
+            // Clear image cache for previous dictionary
+            // imageCache.clearCurrentDict();
 
-                // Load data and initialize bookmarks
-                await initializeDictData();
-
-                if (bookmarksList) {
-                    bookmarksList.innerHTML = "";
-                    await setupBookmarks(bookmarksList);
-                }
-
-                setupSearch(MAX_RESULTS);
-            } else {
-                console.error("No dictionary selected");
-                if (bookmarksList) {
-                    bookmarksList.innerHTML = "未找到可用的词典，请检查网络连接";
-                }
-            }
+            // Update the logo
+            dictLogo.src = selectedOption.dataset.logo;
+            dictLogo.alt = `${selectedDict.name} Logo`;
+            await initializeDictionaryView();
         });
     } catch (error) {
         console.error('Failed to load dictionary list:', error);
@@ -307,6 +304,7 @@ async function initializeDictSelector() {
 }
 
 async function initializeDictionaryView() {
+    const bookmarksList = document.getElementById("bookmarksList");
     if (!currentDictRepo) {
         console.error("No dictionary selected");
         if (bookmarksList) {
@@ -315,28 +313,24 @@ async function initializeDictionaryView() {
         return false;
     }
 
-    currentImageIndex = randomIndex();
-    showImage(); // 默认页面
-
-    // Load data and initialize bookmarks
-    await initializeDictData();
-
-    if (bookmarksList) {
-        bookmarksList.innerHTML = "";
-        await setupBookmarks(bookmarksList);
-    }
+    // Reset search and UI
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchSuggestions').innerHTML = '';
+    document.getElementById('searchResult').innerHTML = '';
 
     setupSearch(MAX_RESULTS);
+    await showImage();
+    await setupBookmarks();
     return true;
 }
 
-async function initializeDictData() {
-    const repo = currentDictRepo;
-    const owner = currentConfig.owner;
-    const branch = currentConfig.branch;
-    const dataPath = currentConfig.dataPath;
-    const files = fileConfigs;
-
+async function initializeDictData(repo) {
+    // const repo = currentDictRepo;
+    const owner = metaConfigs.owner;
+    const branch = metaConfigs.branch;
+    const dataPath = metaConfigs.dataPath;
+    const files = fileInfoList;
+    const currentDictData = {};
     if (!repo) {
         console.error('No repository specified');
         return;
@@ -346,127 +340,124 @@ async function initializeDictData() {
     }
 
     const fileList = getFileList(files, dataPath);
-
     // Try to load each file from available mirrors
+    let success = false;
     for (const { key, path } of fileList) {
         currentDictData[key] = null;
-        let success = false;
-        const proxy = await getBestProxy();
+        const proxy = proxyCache.getBestProxy(urlProxyList);
         try {
-            const url = buildUrl(proxy, owner, repo, branch, path);
-
-            const response = await fetch(url);
-            if (response.ok) {
-                currentDictData[key] = await response.json();
-                proxyCache.lastSuccessProxy = proxy;
-                proxyCache.lastSuccessTime = Date.now();
-                proxyCache.failedProxies.delete(proxy);
+            const repoURL = buildUrl(proxy, owner, repo, branch, path);
+            const result = await loadJSONFile(repoURL);
+            if (result) {
+                currentDictData[key] = result;
+                proxyCache.updateProxy(proxy)
                 success = true;
                 continue;
             }
         } catch (error) {
             console.warn(`Failed to load ${path} from ${proxy}`, error);
-            proxyCache.failedProxies.add(proxy);
+            proxyCache.addFail(proxy);
         }
 
         if (!success) {
             console.error(`Failed to load ${path} from all mirrors`);
-            return false;
+            // return false;
         }
     }
-    // console.log("dictData", dictData)
-    return true;
+
+    return currentDictData;
 }
 
-function searchImage() {
-    // 查询逻辑：如果是有效数字对应页码
-    // 否则：优先判断是否拼音、字词，最后判断是否是目录
-    if (pageNumber && pageNumber >= 1 && pageNumber <= totalImages) {
-        document.getElementById("search-result").innerHTML = "";
-        if (extraPages) {
-            document.getElementById(
-                "search-result"
-            ).innerHTML = `“${searchInput}”相关页面：${extraPages.join(", ")}`;
-        }
-        currentImageIndex = pageNumber;
-        showImage();
-    } else {
-        document.getElementById(
-            "search-result"
-        ).innerHTML = `检索的拼音（及声调）、字词或正文页码（1～${pageConfigs.content.count}）无效，请重新输入!`;
-        // alert("请输入一个有效的拼音或正文页码!");
-    }
-}
 
-async function preLoadImages(index, limit = 0) {
-    const currentPage = padPage(index);
-    const isExtra = currentPage.startsWith(pageConfigs.header.prefix) ||
-        currentPage.startsWith(pageConfigs.footer.prefix);
-    const imageDir = isExtra ? currentConfig.imageExtra : currentConfig.imageDir;
-    const suffix = currentConfig.imageSuffix;
-    const repo = currentDictRepo;
-    const owner = currentConfig.owner;
-    const branch = currentConfig.branch;
-
-    // Load current image
-    const currentImagePath = `${imageDir}/${currentPage}.${suffix}`;
-    const imageUrl = await getImageLink(owner, repo, branch, currentImagePath);
-
-    // Preload adjacent images in background
-    if (limit > 0) {
-        _preloadAdjacentImages(index, limit, imageDir, suffix, owner, repo, branch);
-    }
-
-    return imageUrl;
+function getImagePath(page, suffix) {
+    const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
+    const isExtra = page.startsWith(pageConfigs.header.prefix) || page.startsWith(pageConfigs.footer.prefix);
+    const imageDir = isExtra ? metaConfigs.imageExtra : metaConfigs.imageDir;
+    const imagePath = `${imageDir}/${page}.${suffix}`;
+    return imagePath
 }
 
 // Preload adjacent images for smooth navigation
-async function _preloadAdjacentImages(currentIndex, limit, imageDir, suffix, owner, repo, branch) {
+async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, branch) {
     const preloadPromises = [];
-
-    // Preload forward and backward images
-    for (let i = 1; i <= limit; i++) {
-        const nextPage = changePage(currentIndex, +i);
-        const prevPage = changePage(currentIndex, -i);
-
-        const nextImagePath = `${imageDir}/${nextPage}.${suffix}`;
-        const prevImagePath = `${imageDir}/${prevPage}.${suffix}`;
-
-        // Only preload if not already cached or preloaded
-        if (!imageCache.isCached(nextImagePath) && !imageCache.preloadedImages.has(nextImagePath)) {
-            preloadPromises.push(
-                getImageLink(owner, repo, branch, nextImagePath)
-                    .then(url => {
-                        imageCache.preloadedImages.add(nextImagePath);
-                        // Preload the actual image into browser cache
-                        const img = new Image();
-                        img.src = url;
-                    })
-                    .catch(err => console.warn('Preload failed:', nextImagePath, err))
-            );
+    let outURL = null;
+    for (let offset = -limit; offset <= limit; offset++) {
+        const page = changePage(currentIndex, offset);
+        const imagePath = getImagePath(page, suffix);
+        const imageURL = getImageLink(owner, repo, branch, imagePath);
+        if (offset === 0) {
+            outURL = imageURL;
         }
 
-        if (!imageCache.isCached(prevImagePath) && !imageCache.preloadedImages.has(prevImagePath)) {
+        if (!imageCache.isCached(imagePath) && !imageCache.preloadedImages.has(imagePath)) {
             preloadPromises.push(
-                getImageLink(owner, repo, branch, prevImagePath)
-                    .then(url => {
-                        imageCache.preloadedImages.add(prevImagePath);
-                        // Preload the actual image into browser cache
-                        const img = new Image();
-                        img.src = url;
-                    })
-                    .catch(err => console.warn('Preload failed:', prevImagePath, err))
+                imageURL.then(url => {
+                    imageCache.preloadedImages.add(imagePath);
+                    // Preload the actual image into browser cache
+                    const img = new Image();
+                    img.src = url;
+                })
+                    .catch(err => console.warn('Preload failed:', imagePath, err))
             );
         }
     }
 
     // Execute preloading in parallel without blocking
     Promise.allSettled(preloadPromises);
+    return outURL;
 }
 
+async function preLoadImages(index, limit = 0) {
+    // const currentPage = padPage(index);
+    const suffix = metaConfigs.imageSuffix;
+    const repo = currentDictRepo;
+    const owner = metaConfigs.owner;
+    const branch = metaConfigs.branch;
+    const imageUrl = _preloadAdjacentImages(index, limit, suffix, owner, repo, branch);
+    return imageUrl;
+}
+
+async function searchImages(limit) {
+    const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
+    const searchInput = document.getElementById("searchInput").value.trim();
+    const divResult = document.getElementById("searchResult");
+    divResult.innerHTML = "";
+
+    // 输入为空则忽略
+    if (!searchInput) {
+        return;
+    }
+
+    // 优先匹配页码
+    if (isNumeric(searchInput)) {
+        const pageNumber = parseInt(searchInput);
+        if (pageNumber > 0 && pageNumber <= pageConfigs.content.count) {
+            currentImageIndex = pageNumber;
+            await showImage();
+        } else {
+            divResult.innerHTML = `搜索页面超出范围（1～${pageConfigs.content.count}页）`;
+        }
+        return;
+    }
+
+    // Search in dictionary
+    const results = searchInDictionary(searchInput, limit);
+    if (DEBUG) {
+        console.log(searchInput, results.length);
+    }
+    if (results.length > 0) {
+        // 跳转到第一项
+        currentImageIndex = results[0].page;
+        await showImage();
+        document.getElementById("searchSuggestions").classList.remove("visible");
+    } else {
+        // No results found
+        divResult.innerHTML = `未找到与“${searchInput}”相关的页面`;
+    }
+}
 
 async function showImage() {
-    const imgElement = document.getElementById("main-image");
+    const imgElement = document.getElementById("mainImage");
     imgElement.style.opacity = '0.3';
 
     try {
@@ -504,42 +495,8 @@ async function showImage() {
     }
 }
 
-async function searchImages(limit) {
-    const searchInput = document.getElementById("searchInput").value.trim();
-    const divResult = document.getElementById("search-result");
-    divResult.innerHTML = "";
-
-    // 输入为空则忽略
-    if (!searchInput) return;
-    // 优先匹配页码
-    if (isNumeric(searchInput)) {
-        const pageNumber = parseInt(searchInput);
-        if (pageNumber > 0 && pageNumber <= pageConfigs.content.count) {
-            currentImageIndex = pageNumber;
-            showImage();
-        } else {
-            divResult.innerHTML = `搜索页面超出范围（1～${pageConfigs.content.count}页）`;
-        }
-        return;
-    }
-
-    // Search in dictionary
-    const results = searchInDictionary(searchInput, limit);
-    if (DEBUG) {
-        console.log(searchInput, results.length);
-    }
-    if (results.length > 0) {
-        // 跳转到第一项
-        currentImageIndex = results[0].page;
-        showImage();
-        document.getElementById("searchSuggestions").classList.remove("visible");
-    } else {
-        // No results found
-        divResult.innerHTML = `未找到与“${searchInput}”相关的页面`;
-    }
-}
-
 function changePage(currentPage, offset = 1) {
+    const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
     const header_pages = pageConfigs.header.count;
     const main_pages = header_pages + pageConfigs.content.count;
     const total_pages = main_pages + pageConfigs.footer.count;
@@ -590,21 +547,24 @@ function changePage(currentPage, offset = 1) {
     return `${currentGroup}${padPage(nextPage)}`;
 }
 
-function changeImage(nextPage) {
+async function changeImage(nextPage) {
     if (nextPage) {
         currentImageIndex = changePage(currentImageIndex, +1);
     } else {
         currentImageIndex = changePage(currentImageIndex, -1);
     }
     // console.log("changeImage", nextPage, currentImageIndex)
-    showImage();
+    await showImage();
 }
 
-async function setupBookmarks(bookmarksList) {
-    const sidebarToggle = document.getElementById("sidebarToggle");
-    const sidebarPopup = document.getElementById("sidebarPopup");
-    const closeSidebarPopup = document.getElementById("closeSidebarPopup");
+async function setupBookmarks() {
+    const bookmarksList = document.getElementById("bookmarksList");
+    const tocTile = document.getElementById("tocTitle");
+    const currentDictData = repoConfigs[currentDictRepo];
     const tocData = currentDictData[keyToc] || [];
+
+    bookmarksList.innerHTML = '';
+    tocTile.innerText = currentDictData.name + "目录";
     tocData.forEach((item) => {
         // 检查是否有子项
         if (item.more && item.more.length > 0) {
@@ -660,41 +620,43 @@ async function setupBookmarks(bookmarksList) {
             const actualPage = parseInt(String(page).replace(/^[A-Za-z]+/, ""), 10);
             bookmarkElement.innerHTML += `<span class="page-number">第 ${actualPage} 页</span>`;
         }
-        bookmarkElement.onclick = (e) => {
+        bookmarkElement.onclick = async (e) => {
             if (e.target.closest(".bookmark-group-header")) return;
             currentImageIndex = page;
-            showImage();
+            await showImage();
             closeSidebarHandler();
         };
         return bookmarkElement;
     }
-    // Toggle sidebar
-    function toggleSidebar() {
-        sidebarPopup.classList.toggle("active");
-        sidebarToggle.classList.toggle("active");
-        document.body.style.overflow = sidebarPopup.classList.contains("active") ? "hidden" : "";
+}
 
-        if (!sidebarPopup.classList.contains("active")) {
-            document.querySelectorAll(".bookmark-group").forEach((group) => {
-                group.classList.remove("expanded");
-            });
-        }
-    }
+// Global sidebar functions
+function toggleSidebar() {
+    const sidebarPopup = document.getElementById("sidebarPopup");
+    const sidebarToggle = document.getElementById("sidebarToggle");
 
-    function closeSidebarHandler() {
-        sidebarPopup.classList.remove("active");
-        sidebarToggle.classList.remove("active");
-        document.body.style.overflow = "";
+    sidebarPopup.classList.toggle("active");
+    sidebarToggle.classList.toggle("active");
+    document.body.style.overflow = sidebarPopup.classList.contains("active") ? "hidden" : "";
 
-        // Close all groups
+    if (!sidebarPopup.classList.contains("active")) {
         document.querySelectorAll(".bookmark-group").forEach((group) => {
             group.classList.remove("expanded");
         });
     }
-    // 侧边栏
-    sidebarToggle.addEventListener("click", toggleSidebar);
-    closeSidebarPopup.addEventListener("click", function () {
-        closeSidebarHandler();
+}
+
+function closeSidebarHandler() {
+    const sidebarPopup = document.getElementById("sidebarPopup");
+    const sidebarToggle = document.getElementById("sidebarToggle");
+
+    sidebarPopup.classList.remove("active");
+    sidebarToggle.classList.remove("active");
+    document.body.style.overflow = "";
+
+    // Close all groups
+    document.querySelectorAll(".bookmark-group").forEach((group) => {
+        group.classList.remove("expanded");
     });
 }
 
@@ -710,7 +672,8 @@ function searchInDictionary(query, limit) {
     const maxLimit = limit * 3;
     const normalizedQuery = query.toLowerCase().trim(); // TODO 拼音兼容
     const pinyinQuery = fixPinyin(normalizedQuery);
-    const searchCategories = fileConfigs;
+    const searchCategories = fileInfoList;
+    const currentDictData = repoConfigs[currentDictRepo];
 
     if (DEBUG) {
         console.log("query", normalizedQuery, pinyinQuery);
@@ -781,9 +744,9 @@ function showSearchSuggestions(query, limit) {
             <span class="suggestion-type">${result.type} · 第 ${result.page} 页</span>
         `;
 
-        item.addEventListener("click", () => {
+        item.addEventListener("click", async () => {
             currentImageIndex = result.page;
-            showImage();
+            await showImage();
             suggestionsContainer.classList.remove("visible");
         });
         suggestionsContainer.appendChild(item);
@@ -825,12 +788,14 @@ function setupSearch(limit) {
     const searchBtn = document.getElementById("searchBtn");
     const suggestionsContainer = document.getElementById("searchSuggestions");
 
-    searchBtn.addEventListener("click", searchImages(limit));
+    searchBtn.addEventListener("click", async () => {
+        await searchImages(limit);
+    });
 
     // Handle Enter key in search input
-    searchInput.addEventListener("keydown", (e) => {
+    searchInput.addEventListener("keydown", async (e) => {
         if (e.key === "Enter") {
-            searchImages(limit);
+            await searchImages(limit);
         } else if (e.key === "ArrowDown") {
             e.preventDefault();
             highlightSuggestion(1);
@@ -895,15 +860,15 @@ document.addEventListener("DOMContentLoaded", function () {
     container.addEventListener("mouseenter", showButtons);
     container.addEventListener("mouseleave", hideButtons);
 
-    prevBtn.addEventListener("click", function () {
-        changeImage(false);
+    prevBtn.addEventListener("click", async function () {
+        await changeImage(false);
     });
-    nextBtn.addEventListener("click", function () {
-        changeImage(true);
+    nextBtn.addEventListener("click", async function () {
+        await changeImage(true);
     });
 
     // 键盘点击查询
-    document.addEventListener("keydown", function (event) {
+    document.addEventListener("keydown", async function (event) {
         // 检查焦点是否在搜索输入框或按钮上
         const activeElement = document.activeElement;
         const isSearchFocused = activeElement.id === 'searchInput' ||
@@ -915,10 +880,10 @@ document.addEventListener("DOMContentLoaded", function () {
         // 左右翻页
         if (event.key === "ArrowLeft") {
             event.preventDefault();
-            changeImage(false);
+            await changeImage(false);
         } else if (event.key === "ArrowRight") {
             event.preventDefault();
-            changeImage(true);
+            await changeImage(true);
         }
     });
 });
@@ -929,9 +894,20 @@ document.addEventListener("DOMContentLoaded", async function () {
         bookmarksList.innerHTML = "加载目录中……";
     }
 
+    // Setup sidebar event listeners (only once)
+    const sidebarToggle = document.getElementById("sidebarToggle");
+    const closeSidebarPopup = document.getElementById("closeSidebarPopup");
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener("click", toggleSidebar);
+    }
+    if (closeSidebarPopup) {
+        closeSidebarPopup.addEventListener("click", closeSidebarHandler);
+    }
+
     try {
         await initializeDictSelector();
-        await initializeDictionaryView();
+
     } catch (error) {
         console.error("Error initializing application:", error);
         if (bookmarksList) {
