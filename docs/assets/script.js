@@ -63,7 +63,7 @@ const proxyCache = {
 
 const IMAGE_CACHE_CONFIG = {
     maxCacheSize: 200,
-    preloadCount: 3,
+    preloadCount: 2,
     cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
 };
 const imageCache = {
@@ -390,6 +390,9 @@ async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, 
         }
 
         if (!imageCache.isCached(imagePath) && !imageCache.preloadedImages.has(imagePath)) {
+            if (offset === 0) {
+                document.getElementById('searchResult').innerHTML = "加载中……";
+            }
             preloadPromises.push(
                 imageURL.then(url => {
                     imageCache.preloadedImages.add(imagePath);
@@ -402,18 +405,22 @@ async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, 
         }
     }
 
-    // Execute preloading in parallel without blocking
-    Promise.allSettled(preloadPromises);
+    if (preloadPromises.length > 0) {
+        Promise.allSettled(preloadPromises);
+    }
     return outURL;
 }
 
-async function preLoadImages(index, limit = 0) {
+async function preLoadImages(index, limit) {
     // const currentPage = padPage(index);
     const suffix = metaConfigs.imageSuffix;
     const repo = currentDictRepo;
     const owner = metaConfigs.owner;
     const branch = metaConfigs.branch;
-    const imageUrl = _preloadAdjacentImages(index, limit, suffix, owner, repo, branch);
+    const imageUrl = await _preloadAdjacentImages(index, 0, suffix, owner, repo, branch);
+    if (limit > 0) {
+        _preloadAdjacentImages(index, limit, suffix, owner, repo, branch);
+    }
     return imageUrl;
 }
 
@@ -456,15 +463,11 @@ async function searchImages(limit) {
     }
 }
 
-async function showImage() {
+async function showImage(limit = 0) {
     const imgElement = document.getElementById("mainImage");
     imgElement.style.opacity = '0.3';
-
     try {
-        // Start loading with preloading
-        const imageUrl = await preLoadImages(currentImageIndex, IMAGE_CACHE_CONFIG.preloadCount);
-
-        // Create a new image object to test loading
+        const imageUrl = await preLoadImages(currentImageIndex, limit);
         const tempImg = new Image();
 
         // Use a Promise to handle the image loading
@@ -487,8 +490,9 @@ async function showImage() {
             // Start loading the image
             tempImg.src = imageUrl;
         });
-
+        document.getElementById('searchResult').innerHTML = "";
     } catch (error) {
+        document.getElementById('searchResult').innerHTML = "加载失败";
         console.error("Error loading image:", error);
         imgElement.src = DEFAULT_IMAGE;
         imgElement.style.opacity = '0.3';
@@ -554,7 +558,7 @@ async function changeImage(nextPage) {
         currentImageIndex = changePage(currentImageIndex, -1);
     }
     // console.log("changeImage", nextPage, currentImageIndex)
-    await showImage();
+    await showImage(IMAGE_CACHE_CONFIG.preloadCount);
 }
 
 async function setupBookmarks() {
@@ -623,7 +627,7 @@ async function setupBookmarks() {
         bookmarkElement.onclick = async (e) => {
             if (e.target.closest(".bookmark-group-header")) return;
             currentImageIndex = page;
-            await showImage();
+            await showImage(IMAGE_CACHE_CONFIG.preloadCount);
             closeSidebarHandler();
         };
         return bookmarkElement;
@@ -795,6 +799,15 @@ function setupSearch(limit) {
     // Handle Enter key in search input
     searchInput.addEventListener("keydown", async (e) => {
         if (e.key === "Enter") {
+            // If there's a highlighted suggestion, use it
+            if (highlightedIndex >= 0) {
+                const items = document.querySelectorAll(".suggestion-item");
+                if (items[highlightedIndex]) {
+                    items[highlightedIndex].click();
+                    return;
+                }
+            }
+            // Otherwise, perform normal search
             await searchImages(limit);
         } else if (e.key === "ArrowDown") {
             e.preventDefault();
