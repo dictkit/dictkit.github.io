@@ -34,6 +34,72 @@ const proxyCache = {
     failedProxies: new Set()
 };
 
+const IMAGE_CACHE_CONFIG = {
+    maxCacheSize: 200,
+    preloadCount: 3,
+    cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
+};
+const imageCache = {
+    cache: new Map(), // 缓存图片
+    loadingPromises: new Map(),
+    preloadedImages: new Set(),
+
+    // Generate cache key for an image
+    getKey(imagePath) {
+        return `${currentDictRepo}_${imagePath}`;
+    },
+
+    // Check if image is cached and not expired
+    isCached(imagePath) {
+        const key = this.getKey(imagePath);
+        const cached = this.cache.get(key);
+        if (!cached) return false;
+
+        // Check expiry
+        if (Date.now() - cached.timestamp > IMAGE_CACHE_CONFIG.cacheExpiry) {
+            this.cache.delete(key);
+            return false;
+        }
+        return true;
+    },
+
+    // Get cached image URL
+    getCached(imagePath) {
+        const key = this.getKey(imagePath);
+        const cached = this.cache.get(key);
+        return cached ? cached.url : null;
+    },
+
+    // Cache image URL
+    setCached(imagePath, url) {
+        const key = this.getKey(imagePath);
+
+        // If cache is full, remove oldest entries
+        if (this.cache.size >= IMAGE_CACHE_CONFIG.maxCacheSize) {
+            const oldestKey = this.cache.keys().next().value;
+            this.cache.delete(oldestKey);
+        }
+
+        this.cache.set(key, {
+            url: url,
+            timestamp: Date.now(),
+            imagePath: imagePath
+        });
+    },
+
+    // Clear cache for current dictionary
+    clearCurrentDict() {
+        const prefix = `${currentDictRepo}_`;
+        for (const key of this.cache.keys()) {
+            if (key.startsWith(prefix)) {
+                this.cache.delete(key);
+            }
+        }
+        this.loadingPromises.clear();
+        this.preloadedImages.clear();
+    }
+};
+
 async function getBestProxy() {
     // 获取候选
     const now = Date.now();
@@ -98,34 +164,56 @@ function isNumeric(str) {
     return !isNaN(str) && !isNaN(parseInt(str));
 }
 
-function getImageLink(owner, repo, branch, imagePath) {
-    // 本地默认图片
-    const directUrl = DEFAULT_IMAGE;
-
-    return new Promise(async (resolve) => {
-        const img = new Image();
-        img.src = directUrl;
-        // 尝试加载实际图片
-        const proxy = await getBestProxy();
-        try {
-            const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
-            const response = await fetch(imageUrl, { method: 'HEAD' });
-            if (response.ok) {
-                proxyCache.lastSuccessProxy = proxy;
-                proxyCache.lastSuccessTime = Date.now();
-                proxyCache.failedProxies.delete(proxy);
-                img.src = imageUrl;
-                resolve(imageUrl);
-                return;
-            }
-        } catch (error) {
-            console.warn(`Failed to load image from ${proxy}`, error);
-            proxyCache.failedProxies.add(proxy);
+async function getImageLink(owner, repo, branch, imagePath) {
+    // Check cache first
+    if (imageCache.isCached(imagePath)) {
+        const cachedUrl = imageCache.getCached(imagePath);
+        if (cachedUrl) {
+            return cachedUrl;
         }
+    }
 
-        // console.log("Using fallback URL:", directUrl);
-        resolve(directUrl);
-    });
+    // Check if already loading
+    const cacheKey = imageCache.getKey(imagePath);
+    if (imageCache.loadingPromises.has(cacheKey)) {
+        return imageCache.loadingPromises.get(cacheKey);
+    }
+
+    // Create loading promise
+    const loadingPromise = _loadImageFromRemote(owner, repo, branch, imagePath);
+    imageCache.loadingPromises.set(cacheKey, loadingPromise);
+
+    try {
+        const url = await loadingPromise;
+        imageCache.setCached(imagePath, url);
+        return url;
+    } finally {
+        imageCache.loadingPromises.delete(cacheKey);
+    }
+}
+
+// Separate function for actual remote loading
+async function _loadImageFromRemote(owner, repo, branch, imagePath) {
+    const defaultImageUrl = DEFAULT_IMAGE;
+
+    // Try to load actual image
+    const proxy = await getBestProxy();
+    const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
+
+    try {
+        const response = await fetch(imageUrl, { method: 'HEAD' });
+        if (response.ok) {
+            proxyCache.lastSuccessProxy = proxy;
+            proxyCache.lastSuccessTime = Date.now();
+            proxyCache.failedProxies.delete(proxy);
+            return imageUrl;
+        }
+    } catch (error) {
+        console.warn(`Failed to load image from ${proxy}`, error);
+        proxyCache.failedProxies.add(proxy);
+    }
+
+    return defaultImageUrl;
 }
 
 async function initializeDictSelector() {
@@ -174,9 +262,12 @@ async function initializeDictSelector() {
                 currentDictRepo = selectedDict.repo;
                 pageConfigs = selectedDict.pages || DEFAULT_PAGE;
 
+                // Clear image cache for previous dictionary
+                imageCache.clearCurrentDict();
+
                 // Update the logo
                 dictLogo.src = selectedOption.dataset.logo;
-                dictLogo.alt = `${selectedOption.text} Logo`;
+                dictLogo.alt = `${selectedDict.name} Logo`;
 
                 // Load the new dictionary data
                 await initializeDictData();
@@ -307,24 +398,105 @@ function searchImage() {
     }
 }
 
-async function showImage() {
-    // console.log("currentImageIndex", currentImageIndex);
-    const currentPage = padPage(currentImageIndex);
+async function preLoadImages(index, limit = 0) {
+    const currentPage = padPage(index);
     const isExtra = currentPage.startsWith(pageConfigs.header.prefix) ||
         currentPage.startsWith(pageConfigs.footer.prefix);
     const imageDir = isExtra ? currentConfig.imageExtra : currentConfig.imageDir;
-    const imagePath = `${imageDir}/${currentPage}.${currentConfig.imageSuffix}`;
+    const suffix = currentConfig.imageSuffix;
     const repo = currentDictRepo;
     const owner = currentConfig.owner;
     const branch = currentConfig.branch;
 
+    // Load current image
+    const currentImagePath = `${imageDir}/${currentPage}.${suffix}`;
+    const imageUrl = await getImageLink(owner, repo, branch, currentImagePath);
 
+    // Preload adjacent images in background
+    if (limit > 0) {
+        _preloadAdjacentImages(index, limit, imageDir, suffix, owner, repo, branch);
+    }
+
+    return imageUrl;
+}
+
+// Preload adjacent images for smooth navigation
+async function _preloadAdjacentImages(currentIndex, limit, imageDir, suffix, owner, repo, branch) {
+    const preloadPromises = [];
+
+    // Preload forward and backward images
+    for (let i = 1; i <= limit; i++) {
+        const nextPage = changePage(currentIndex, +i);
+        const prevPage = changePage(currentIndex, -i);
+
+        const nextImagePath = `${imageDir}/${nextPage}.${suffix}`;
+        const prevImagePath = `${imageDir}/${prevPage}.${suffix}`;
+
+        // Only preload if not already cached or preloaded
+        if (!imageCache.isCached(nextImagePath) && !imageCache.preloadedImages.has(nextImagePath)) {
+            preloadPromises.push(
+                getImageLink(owner, repo, branch, nextImagePath)
+                    .then(url => {
+                        imageCache.preloadedImages.add(nextImagePath);
+                        // Preload the actual image into browser cache
+                        const img = new Image();
+                        img.src = url;
+                    })
+                    .catch(err => console.warn('Preload failed:', nextImagePath, err))
+            );
+        }
+
+        if (!imageCache.isCached(prevImagePath) && !imageCache.preloadedImages.has(prevImagePath)) {
+            preloadPromises.push(
+                getImageLink(owner, repo, branch, prevImagePath)
+                    .then(url => {
+                        imageCache.preloadedImages.add(prevImagePath);
+                        // Preload the actual image into browser cache
+                        const img = new Image();
+                        img.src = url;
+                    })
+                    .catch(err => console.warn('Preload failed:', prevImagePath, err))
+            );
+        }
+    }
+
+    // Execute preloading in parallel without blocking
+    Promise.allSettled(preloadPromises);
+}
+
+
+async function showImage() {
     const imgElement = document.getElementById("main-image");
     imgElement.style.opacity = '0.3';
+
     try {
-        const imageUrl = await getImageLink(owner, repo, branch, imagePath);
-        imgElement.src = imageUrl;
-        imgElement.onload = () => imgElement.style.opacity = '1';
+        // Start loading with preloading
+        const imageUrl = await preLoadImages(currentImageIndex, IMAGE_CACHE_CONFIG.preloadCount);
+
+        // Create a new image object to test loading
+        const tempImg = new Image();
+
+        // Use a Promise to handle the image loading
+        await new Promise((resolve, reject) => {
+            tempImg.onload = () => {
+                // Image loaded successfully, update the main image
+                imgElement.src = imageUrl;
+                imgElement.style.opacity = '1';
+                resolve();
+            };
+
+            tempImg.onerror = () => {
+                // Image failed to load, use fallback
+                console.error("Image loading failed for:", imageUrl);
+                imgElement.src = DEFAULT_IMAGE;
+                imgElement.style.opacity = '0.3';
+                reject(new Error('Image load error'));
+            };
+
+            // Start loading the image
+            tempImg.src = imageUrl;
+        });
+
     } catch (error) {
         console.error("Error loading image:", error);
         imgElement.src = DEFAULT_IMAGE;
