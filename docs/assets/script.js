@@ -14,20 +14,17 @@ const PINYIN_MAP = {
     ŋ: "ng"
 }
 const DEFAULT_IMAGE = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
-const DATA_FILE = 'dicts.json';
+const DATA_FILE = "dicts.json";
 
 let fileInfoList = [];
 let urlProxyList = [];
 let metaConfigs = {};
 let repoConfigs = {};
 let currentDictRepo = null;
-
-// let currentDictData = {};
-// let pageConfigs = DEFAULT_PAGE;
-
 let currentImageIndex = DEFAULT_IMAGE_INDEX;
-const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-const pinyinRegExp = new RegExp(pinyinKeys, 'gi');
+
+const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+const pinyinRegExp = new RegExp(pinyinKeys, "gi");
 const keyToc = "toc";
 const keyPinyin = "pinyin";
 
@@ -127,8 +124,6 @@ const imageCache = {
     }
 };
 
-
-
 async function loadJSONFile(filePath) {
     try {
         const response = await fetch(filePath);
@@ -163,7 +158,7 @@ function buildUrl(urlTemplate, owner, repo, branch, path) {
 }
 
 function fixPinyin(pinyin) {
-    // pinyin.replace(/[*·]+|[0-9]+$/g, '')
+    // pinyin.replace(/[*·]+|[0-9]+$/g, "")
     const out = pinyin.replace(pinyinRegExp, match => PINYIN_MAP[match]);
     return out == "ei" ? "ê" : out;
 }
@@ -213,7 +208,7 @@ async function _loadImageFromRemote(owner, repo, branch, imagePath) {
     const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
 
     try {
-        const response = await fetch(imageUrl, { method: 'HEAD' });
+        const response = await fetch(imageUrl, { method: "HEAD" });
         if (response.ok) {
             proxyCache.updateProxy(proxy);
             return imageUrl;
@@ -234,26 +229,31 @@ async function initializeDictSelector() {
         metaConfigs = data.config || {}
         fileInfoList = data.files || [];
 
-        const dictSelector = document.getElementById('dictSelector');
-        const dictLogo = document.getElementById('dictLogo');
+        const dictSelector = document.getElementById("dictSelector");
+        const dictLogo = document.getElementById("dictLogo");
 
         // Clear existing options
-        dictSelector.innerHTML = '';
-
-        // Add options
-        dictConfigs.forEach((dict) => {
-            const repo = dict.repo;
-            const option = document.createElement('option');
-            option.value = repo;
-            option.textContent = dict.name;
-            option.dataset.logo = `assets/logos/${dict.repo}.png`;
-            dictSelector.appendChild(option);
-        });
+        dictSelector.innerHTML = "";
 
         // Set default selection and load first dictionary
         if (dictConfigs.length > 0) {
-            const firstDict = dictConfigs[0];
-            currentDictRepo = firstDict.repo;
+            currentDictRepo = dictConfigs[0].repo;
+            repoConfigs = dictConfigs.reduce((acc, item) => {
+                acc[item.repo] = item;
+                return acc
+            }, {});
+
+            dictConfigs.forEach((dict) => {
+                const repo = dict.repo;
+                const logoImage = `assets/logos/${repo}.png`;
+                repoConfigs[repo].logo = logoImage;
+
+                const option = document.createElement("option");
+                option.value = repo;
+                option.textContent = dict.name;
+                option.dataset.logo = logoImage;
+                dictSelector.appendChild(option);
+            });
 
             // 获取所有词典信息
             const promises = dictConfigs.map(async (dict) => {
@@ -261,24 +261,18 @@ async function initializeDictSelector() {
                 return { repo: dict.repo, data };
             });
             const results = await Promise.all(promises);
-
-            repoConfigs = dictConfigs.reduce((acc, item) => {
-                acc[item.repo] = item;
-                return acc
-            }, {});
             results.forEach(item => {
                 repoConfigs[item.repo] = { ...repoConfigs[item.repo], ...item.data };
             });
-            // console.log(Object.keys(repoConfigs), repoConfigs);
 
             // Set the logo for the first dictionary
-            dictLogo.src = `assets/logos/${currentDictRepo}.png`;
-            dictLogo.alt = `${firstDict.name} Logo`;
-            await initializeDictionaryView();
+            dictLogo.src = repoConfigs[currentDictRepo].logo;
+            dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
+            await initializeFromURL();
         }
 
         // Add change event listener
-        dictSelector.addEventListener('change', async (e) => {
+        dictSelector.addEventListener("change", async (e) => {
             const selectedOption = e.target.options[e.target.selectedIndex];
             const selectedDict = dictConfigs.find(dict => dict.repo === e.target.value);
 
@@ -296,10 +290,13 @@ async function initializeDictSelector() {
             // Update the logo
             dictLogo.src = selectedOption.dataset.logo;
             dictLogo.alt = `${selectedDict.name} Logo`;
+            document.getElementById("searchInput").value = "";
+            document.getElementById("searchSuggestions").innerHTML = "";
+            document.getElementById("searchResult").innerHTML = "";
             await initializeDictionaryView();
         });
     } catch (error) {
-        console.error('Failed to load dictionary list:', error);
+        console.error("Failed to load dictionary list:", error);
     }
 }
 
@@ -312,11 +309,6 @@ async function initializeDictionaryView() {
         }
         return false;
     }
-
-    // Reset search and UI
-    document.getElementById('searchInput').value = '';
-    document.getElementById('searchSuggestions').innerHTML = '';
-    document.getElementById('searchResult').innerHTML = '';
 
     setupSearch(MAX_RESULTS);
     await showImage();
@@ -332,7 +324,7 @@ async function initializeDictData(repo) {
     const files = fileInfoList;
     const currentDictData = {};
     if (!repo) {
-        console.error('No repository specified');
+        console.error("No repository specified");
         return;
     }
     if (DEBUG) {
@@ -368,7 +360,6 @@ async function initializeDictData(repo) {
     return currentDictData;
 }
 
-
 function getImagePath(page, suffix) {
     const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
     const isExtra = page.startsWith(pageConfigs.header.prefix) || page.startsWith(pageConfigs.footer.prefix);
@@ -391,7 +382,7 @@ async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, 
 
         if (!imageCache.isCached(imagePath) && !imageCache.preloadedImages.has(imagePath)) {
             if (offset === 0) {
-                document.getElementById('searchResult').innerHTML = "加载中……";
+                document.getElementById("searchResult").innerHTML = "加载中……";
             }
             preloadPromises.push(
                 imageURL.then(url => {
@@ -400,7 +391,7 @@ async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, 
                     const img = new Image();
                     img.src = url;
                 })
-                    .catch(err => console.warn('Preload failed:', imagePath, err))
+                    .catch(err => console.warn("Preload failed:", imagePath, err))
             );
         }
     }
@@ -465,7 +456,7 @@ async function searchImages(limit) {
 
 async function showImage(limit = 0) {
     const imgElement = document.getElementById("mainImage");
-    imgElement.style.opacity = '0.3';
+    imgElement.style.opacity = "0.3";
     try {
         const imageUrl = await preLoadImages(currentImageIndex, limit);
         const tempImg = new Image();
@@ -475,7 +466,7 @@ async function showImage(limit = 0) {
             tempImg.onload = () => {
                 // Image loaded successfully, update the main image
                 imgElement.src = imageUrl;
-                imgElement.style.opacity = '1';
+                imgElement.style.opacity = "1";
                 resolve();
             };
 
@@ -483,20 +474,21 @@ async function showImage(limit = 0) {
                 // Image failed to load, use fallback
                 console.error("Image loading failed for:", imageUrl);
                 imgElement.src = DEFAULT_IMAGE;
-                imgElement.style.opacity = '0.3';
-                reject(new Error('Image load error'));
+                imgElement.style.opacity = "0.3";
+                reject(new Error("Image load error"));
             };
 
             // Start loading the image
             tempImg.src = imageUrl;
         });
-        document.getElementById('searchResult').innerHTML = "";
+        document.getElementById("searchResult").innerHTML = "";
     } catch (error) {
-        document.getElementById('searchResult').innerHTML = "加载失败";
+        document.getElementById("searchResult").innerHTML = "加载失败";
         console.error("Error loading image:", error);
         imgElement.src = DEFAULT_IMAGE;
-        imgElement.style.opacity = '0.3';
+        imgElement.style.opacity = "0.3";
     }
+    updateURLParameters();
 }
 
 function changePage(currentPage, offset = 1) {
@@ -567,8 +559,8 @@ async function setupBookmarks() {
     const currentDictData = repoConfigs[currentDictRepo];
     const tocData = currentDictData[keyToc] || [];
 
-    bookmarksList.innerHTML = '';
-    tocTile.innerText = currentDictData.name + "目录";
+    bookmarksList.innerHTML = "";
+    tocTile.innerText = `《${currentDictData.name}》目录`;
     tocData.forEach((item) => {
         // 检查是否有子项
         if (item.more && item.more.length > 0) {
@@ -799,7 +791,7 @@ function setupSearch(limit) {
     // Handle Enter key in search input
     searchInput.addEventListener("keydown", async (e) => {
         if (e.key === "Enter") {
-            // If there's a highlighted suggestion, use it
+            // If there"s a highlighted suggestion, use it
             if (highlightedIndex >= 0) {
                 const items = document.querySelectorAll(".suggestion-item");
                 if (items[highlightedIndex]) {
@@ -832,10 +824,59 @@ function setupSearch(limit) {
     });
 }
 
-document.addEventListener("DOMContentLoaded", function () {
+function updateURLParameters() {
+    const url = new URL(window.location.href);
+    const searchInput = document.getElementById("searchInput").value.trim();
+    const params = { dict: currentDictRepo, query: searchInput, page: currentImageIndex };
+    Object.entries(params).forEach(([key, value]) => {
+        if (value) {
+            url.searchParams.set(key, value);
+        } else {
+            url.searchParams.delete(key);
+        }
+    });
+    window.history.replaceState({}, "", url);
+}
+
+async function initializeFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const dictParam = urlParams.get("dict");
+    const pageParam = urlParams.get("page");
+    const queryParam = urlParams.get("query");
+
+    if (dictParam in repoConfigs) {
+        const dictSelector = document.getElementById("dictSelector");
+        const dictLogo = document.getElementById("dictLogo");
+        const option = dictSelector.querySelector(`option[value="${dictParam}"]`);
+
+        if (option) {
+            currentDictRepo = dictParam;
+            dictSelector.value = dictParam;
+            dictLogo.src = repoConfigs[currentDictRepo].logo;
+            dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
+            dictSelector.dispatchEvent( new Event("change", { bubbles: true }));
+        }
+    }
+
+    setupSearch(MAX_RESULTS);
+    await setupBookmarks();
+
+    if (queryParam && !pageParam) {
+        const searchInput = document.getElementById("searchInput");
+        searchInput.value = queryParam;
+        const searchBtn = document.getElementById("searchBtn");
+        searchBtn.click();
+    } else if (pageParam) {
+        currentImageIndex = pageParam;
+        await showImage();
+    }
+}
+
+document.addEventListener("DOMContentLoaded", async function () {
+    const bookmarksList = document.getElementById("bookmarksList");
+
     const prevBtn = document.getElementById("prevBtn");
     const nextBtn = document.getElementById("nextBtn");
-    const searchBtn = document.getElementById("searchBtn");
     const container = document.querySelector(".result-container");
 
     const tipToggle = document.getElementById("tipToggle");
@@ -884,8 +925,8 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("keydown", async function (event) {
         // 检查焦点是否在搜索输入框或按钮上
         const activeElement = document.activeElement;
-        const isSearchFocused = activeElement.id === 'searchInput' ||
-            activeElement.closest('.search-buttons') !== null;
+        const isSearchFocused = activeElement.id === "searchInput" ||
+            activeElement.closest(".search-buttons") !== null;
 
         // 如果焦点在搜索相关元素上，则不处理左右箭头
         if (isSearchFocused) return;
@@ -899,10 +940,7 @@ document.addEventListener("DOMContentLoaded", function () {
             await changeImage(true);
         }
     });
-});
 
-document.addEventListener("DOMContentLoaded", async function () {
-    const bookmarksList = document.getElementById("bookmarksList");
     if (bookmarksList) {
         bookmarksList.innerHTML = "加载目录中……";
     }
@@ -920,6 +958,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     try {
         await initializeDictSelector();
+        await showImage();
 
     } catch (error) {
         console.error("Error initializing application:", error);
