@@ -10,6 +10,36 @@ let highlightedIndex = -1;
 let suggestionSearchTimer = null;
 let font_options = DEFAULT_FONTS;
 let pendingDictLoads = {};
+let spreadMode = false;
+const DARK_MODE_KEY = "dictkit:darkmode";
+
+// ── Page Indicator ──
+
+function updatePageIndicator() {
+    const el = document.getElementById("pageIndicator");
+    if (!el) return;
+    const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+    const total = pageConfigs.header.count + pageConfigs.content.count + pageConfigs.footer.count;
+    if (spreadMode && isContentPage(currentImageIndex)) {
+        const num = parseInt(currentImageIndex, 10);
+        if (!Number.isNaN(num) && num >= 1 && num <= pageConfigs.content.count) {
+            let text;
+            if (num === 1) {
+                text = `0001 / ${padPage(total)}`;
+            } else if (num % 2 === 1) {
+                text = `${padPage(num - 1)} · ${currentImageIndex} / ${padPage(total)}`;
+            } else {
+                const right = num + 1 <= pageConfigs.content.count ? ` · ${padPage(num + 1)}` : "";
+                text = `${currentImageIndex}${right} / ${padPage(total)}`;
+            }
+            el.textContent = text;
+        } else {
+            el.textContent = `${currentImageIndex} / ${padPage(total)}`;
+        }
+    } else {
+        el.textContent = `${currentImageIndex} / ${padPage(total)}`;
+    }
+}
 
 // ── DOM Helpers ──
 
@@ -103,6 +133,8 @@ function initializeSettingsPanel() {
 
     initializeFontSelector();
     initializeProxySelector();
+    initializeDarkMode();
+    initializeSpreadMode();
 
     toggle.addEventListener("click", e => {
         e.stopPropagation();
@@ -118,35 +150,248 @@ function initializeSettingsPanel() {
     });
 }
 
+// ── Dark Mode ──
+
+function migrateDarkModeKey(raw) {
+    // Migrate old boolean values to new scheme names
+    if (raw === "true") return "dark";
+    if (raw === "false" || raw === "") return "light";
+    return raw;
+}
+
+function applyColorScheme(scheme) {
+    const isDark = scheme === "dark" ||
+        (scheme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.body.classList.toggle("dark-mode", isDark);
+    setStorageValue(DARK_MODE_KEY, scheme);
+}
+
+function initializeDarkMode() {
+    const sel = document.getElementById("darkModeSelect");
+    if (!sel) return;
+    let stored = getStorageValue(DARK_MODE_KEY, "auto");
+    stored = migrateDarkModeKey(stored);
+    if (!["auto", "light", "dark"].includes(stored)) stored = "auto";
+    sel.value = stored;
+    applyColorScheme(stored);
+    sel.addEventListener("change", () => applyColorScheme(sel.value));
+    // Listen for system changes when in auto mode
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if (sel.value === "auto") applyColorScheme("auto");
+    });
+}
+
+// ── Fullscreen ──
+
+function toggleFullscreen() {
+    const container = document.querySelector(".result-container");
+    if (!container) return;
+    if (document.fullscreenElement || container.classList.contains("fullscreen")) {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+        container.classList.remove("fullscreen");
+    } else {
+        container.classList.add("fullscreen");
+        if (container.requestFullscreen) {
+            container.requestFullscreen().catch(() => {});
+        }
+    }
+}
+
+// ── Spread / Dual-page Mode ──
+
+const PLACEHOLDER_IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='600'%3E%3Crect width='400' height='600' fill='%23f0f0f0'/%3E%3C/svg%3E";
+
+function isContentPage(page) {
+    return /^\d+$/.test(String(page));
+}
+
+function getSecondPageUrl() {
+    const num = parseInt(currentImageIndex, 10);
+    if (Number.isNaN(num) || num < 2 || num % 2 === 1) return null;
+    const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+    if (num + 1 > pageConfigs.content.count) return null;
+    const suffix = metaConfigs.imageSuffix;
+    const imagePath = getImagePath(padPage(num + 1), suffix);
+    return getImageLink(metaConfigs.owner, currentDictRepo, metaConfigs.branch, imagePath);
+}
+
+function initializeSpreadMode() {
+    const sel = document.getElementById("spreadMode");
+    if (!sel) return;
+    const stored = getStorageValue("dictkit:spread", "0");
+    sel.value = stored;
+    spreadMode = stored === "1";
+    // Don't apply spread class here — showImage manages it after page ready
+
+    sel.addEventListener("change", async () => {
+        spreadMode = sel.value === "1";
+        setStorageValue("dictkit:spread", sel.value);
+        if (spreadMode) {
+            const num = parseInt(currentImageIndex, 10);
+            if (isContentPage(currentImageIndex) && !Number.isNaN(num)) {
+                if (num > 1 && num % 2 === 1) {
+                    currentImageIndex = padPage(num - 1);
+                }
+            }
+            applySpreadClass();
+        } else {
+            removeSpreadClass();
+        }
+        await showImage(IMAGE_CACHE_CONFIG.preloadCount);
+    });
+}
+
+function applySpreadClass() {
+    const el = document.querySelector(".result-container");
+    if (!el) return;
+    // Only apply spread layout for content pages
+    if (isContentPage(currentImageIndex)) {
+        el.classList.add("spread-mode");
+    } else {
+        el.classList.remove("spread-mode");
+    }
+}
+
+function removeSpreadClass() {
+    document.querySelector(".result-container")?.classList.remove("spread-mode");
+}
+
+document.addEventListener("fullscreenchange", () => {
+    const container = document.querySelector(".result-container");
+    if (!document.fullscreenElement && container) {
+        container.classList.remove("fullscreen");
+    }
+});
+
+// ── Touch Swipe ──
+
+let touchStartX = 0;
+let touchStartY = 0;
+
+function setupTouchSwipe() {
+    const container = document.querySelector(".result-container");
+    if (!container) return;
+
+    container.addEventListener("touchstart", e => {
+        const t = e.changedTouches[0];
+        touchStartX = t.screenX;
+        touchStartY = t.screenY;
+    }, { passive: true });
+
+    container.addEventListener("touchend", async e => {
+        const t = e.changedTouches[0];
+        const dx = t.screenX - touchStartX;
+        const dy = t.screenY - touchStartY;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+            e.preventDefault();
+            await changeImage(dx < 0);
+        }
+    }, { passive: false });
+}
+
 // ── Image Display ──
 
 async function showImage(limit = 0) {
     const img = document.getElementById("mainImage");
+    const img2 = document.getElementById("mainImage2");
     const container = document.querySelector(".result-container");
     const token = ++imageLoadToken;
     container?.classList.add("is-loading");
     setStatusMessage("加载中……");
     try {
-        const url = await preLoadImages(currentImageIndex, limit);
-        if (token !== imageLoadToken) return;
-        img.src = url;
-        img.style.opacity = "1";
-        setStatusMessage("");
+        // Sync spread CSS — shows spread only for content pages
+        (spreadMode ? applySpreadClass : removeSpreadClass)();
+        const isSpread = spreadMode && isContentPage(currentImageIndex);
+        if (isSpread) {
+            await loadSpreadView(img, img2, token);
+        } else {
+            await loadSingleView(img, img2, limit, token);
+        }
     } catch (error) {
-        if (token !== imageLoadToken) return;
-        setStatusMessage("图片加载失败，请切换来源或稍后重试");
-        console.error("Error loading image:", error);
-        img.src = DEFAULT_IMAGE;
-        img.style.opacity = "0.3";
+        if (token === imageLoadToken) {
+            setStatusMessage("图片加载失败，请切换来源或稍后重试");
+            console.error("Error loading image:", error);
+            img.src = DEFAULT_IMAGE;
+            img.style.opacity = "0.3";
+            if (img2) { img2.src = ""; img2.style.opacity = "0"; }
+        }
     } finally {
         if (token === imageLoadToken) {
             container?.classList.remove("is-loading");
+            updatePageIndicator();
             updateURLParameters();
         }
     }
 }
 
+async function loadSingleView(img, img2, limit, token) {
+    const url = await preLoadImages(currentImageIndex, limit);
+    if (token !== imageLoadToken) return;
+    img.src = url;
+    img.style.opacity = "1";
+    if (img2) { img2.src = ""; img2.style.opacity = "0"; }
+    setStatusMessage("");
+}
+
+async function loadSpreadView(img, img2, token) {
+    const num = parseInt(currentImageIndex, 10);
+
+    if (num === 1) {
+        // Page 1 on the right, placeholder on the left
+        const url = await preLoadImages(currentImageIndex, 0);
+        if (token !== imageLoadToken) return;
+        img.src = PLACEHOLDER_IMG;
+        img.style.opacity = "1";
+        img2.src = url;
+        img2.style.opacity = "1";
+    } else if (num % 2 === 1) {
+        // Odd > 1: left = num-1 (even), right = num
+        const leftPage = padPage(num - 1);
+        const [leftUrl, rightUrl] = await Promise.all([
+            preLoadImages(leftPage, 0),
+            preLoadImages(currentImageIndex, 0),
+        ]);
+        if (token !== imageLoadToken) return;
+        img.src = leftUrl;
+        img.style.opacity = "1";
+        img2.src = rightUrl;
+        img2.style.opacity = "1";
+    } else {
+        // Even: left = num, right = num+1 or placeholder
+        const url = await preLoadImages(currentImageIndex, 0);
+        const url2 = await getSecondPageUrl();
+        if (token !== imageLoadToken) return;
+        img.src = url;
+        img.style.opacity = "1";
+        img2.src = url2 || PLACEHOLDER_IMG;
+        img2.style.opacity = "1";
+    }
+    setStatusMessage("");
+}
+
 async function changeImage(nextPage) {
+    if (spreadMode && isContentPage(currentImageIndex)) {
+        const num = parseInt(currentImageIndex, 10);
+        if (!Number.isNaN(num)) {
+            if (!nextPage && num <= 1) {
+                // Page 1 prev: fall through to changePage for header transition (→A0094)
+            } else {
+                const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+                const currentEven = num <= 1 ? 1 : (num % 2 === 0 ? num : num - 1);
+                let target = nextPage
+                    ? (currentEven <= 1 ? 2 : Math.min(currentEven + 2, pageConfigs.content.count))
+                    : Math.max(currentEven - 2, 2);
+                if (target !== num) {
+                    currentImageIndex = padPage(target);
+                    await showImage(IMAGE_CACHE_CONFIG.preloadCount);
+                    return;
+                }
+                // At content boundary — fall through to single-page navigation
+            }
+        }
+    }
     currentImageIndex = changePage(currentImageIndex, nextPage ? 1 : -1);
     await showImage(IMAGE_CACHE_CONFIG.preloadCount);
 }
@@ -445,7 +690,7 @@ async function initializeFromURL() {
             document.getElementById("searchInput").value = queryParam;
             document.getElementById("searchBtn").click();
         } else {
-            document.getElementById("searchResult").textContent = "页码参数格式异常";
+            document.getElementById("searchResult").textContent = "页码参数格式异常，可能超出范围";
         }
     } else {
         await showImage();
@@ -555,8 +800,44 @@ document.addEventListener("DOMContentLoaded", async function () {
         } else if (event.key === "ArrowRight") {
             event.preventDefault();
             await changeImage(true);
+        } else if (event.key === "Home") {
+            event.preventDefault();
+            const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+            if (spreadMode) {
+                currentImageIndex = padPage(2);
+            } else {
+                currentImageIndex = getFirstPageId(pageConfigs);
+            }
+            await showImage(IMAGE_CACHE_CONFIG.preloadCount);
+        } else if (event.key === "End") {
+            event.preventDefault();
+            if (spreadMode) {
+                const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+                let last = pageConfigs.content.count;
+                if (last % 2 === 1) last--;
+                if (last < 2) last = 2;
+                currentImageIndex = padPage(last);
+            } else {
+                const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
+                let idx;
+                if (pageConfigs.footer.count > 0) {
+                    idx = `${pageConfigs.footer.prefix}${padPage(pageConfigs.footer.count)}`;
+                } else if (pageConfigs.content.count > 0) {
+                    idx = padPage(pageConfigs.content.count);
+                } else {
+                    idx = getFirstPageId(pageConfigs);
+                }
+                currentImageIndex = idx;
+            }
+            await showImage(IMAGE_CACHE_CONFIG.preloadCount);
         }
     });
+
+    // Fullscreen
+    document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
+
+    // Touch swipe
+    setupTouchSwipe();
 
     // Tip popup
     const tipToggle = document.getElementById("tipToggle");

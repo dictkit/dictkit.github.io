@@ -12,7 +12,7 @@
     <title>汉语字典词典在线版</title>
     <link rel="icon" href="favicon.ico">
     <link rel="manifest" href="manifest.json">
-    <link rel="preconnect" href="https://raw.githubusercontent.com">
+    <!-- <link rel="preconnect" href="https://raw.githubusercontent.com"> -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/icons.css">
 </head>
@@ -38,29 +38,49 @@
             </div>
 
             <div class="search-buttons">
-                <button class="action-btn" id="sidebarToggle" title="词典目录">
-                    <span class="icon icon-list"></span>
-                </button>
 
                 <div class="settings-wrapper">
-                    <button class="action-btn" id="settingsToggle" title="字体与资源设置" aria-expanded="false"
+                    <button class="action-btn" id="settingsToggle" title="资源设置" aria-expanded="false"
                         aria-controls="settingsPanel">
                         <span class="settings-icon icon icon-settings" aria-hidden="true"></span>
                     </button>
                     <div class="settings-panel" id="settingsPanel">
                         <label class="settings-field" for="fontSelector">
-                            <span>字体</span>
+                            <span>字体样式</span>
                             <select id="fontSelector" class="settings-select"></select>
                         </label>
                         <label class="settings-field" for="proxySelector">
-                            <span>来源</span>
+                            <span>数据来源</span>
                             <select id="proxySelector" class="settings-select"></select>
+                        </label>
+                        <label class="settings-field" for="darkModeSelect">
+                            <span>配色模式</span>
+                            <select id="darkModeSelect" class="settings-select">
+                                <option value="auto">自动</option>
+                                <option value="light">亮色</option>
+                                <option value="dark">深色</option>
+                            </select>
+                        </label>
+                        <label class="settings-field" for="spreadMode">
+                            <span>双面视图</span>
+                            <select id="spreadMode" class="settings-select">
+                                <option value="0">关闭</option>
+                                <option value="1">开启</option>
+                            </select>
                         </label>
                     </div>
                 </div>
 
+                <button class="action-btn" id="fullscreenBtn" title="全屏模式">
+                    <span class="icon icon-fullscreen"></span>
+                </button>
+
                 <button class="action-btn" id="tipToggle" title="拼音提示">
                     <span class="icon icon-info"></span>
+                </button>
+
+                <button class="action-btn" id="sidebarToggle" title="词典目录">
+                    <span class="icon icon-list"></span>
                 </button>
 
                 <button class="search-btn" id="searchBtn" title="搜索">
@@ -107,12 +127,14 @@
 
     <section class="result-container">
         <img id="mainImage" alt="Image" src="images/0001.png" style="opacity: 0.3;">
+        <img id="mainImage2" alt="Image" class="spread-image" src="" style="opacity: 0;">
         <div id="prevBtn" class="nav-arrow">
             <span class="icon icon-arrow-left"></span>
         </div>
         <div id="nextBtn" class="nav-arrow">
             <span class="icon icon-arrow-right"></span>
         </div>
+        <div id="pageIndicator" class="page-indicator"></div>
     </section>
 
     <script src="js/dictkit.js"></script>

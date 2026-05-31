@@ -49,3 +49,8 @@
   background: url("../images/icon/settings.svg") no-repeat center center;
   background-size: contain;
 }
+
+.icon-fullscreen {
+  background: url("../images/icon/fullscreen.svg") no-repeat center center;
+  background-size: contain;
+}

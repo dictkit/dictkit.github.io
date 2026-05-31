@@ -82,16 +82,6 @@ header h1 {
   border-color: var(--search-color);
 }
 
-.search-logo {
-  height: 40px;
-  width: 40px;
-  margin-right: 1rem;
-  transition: transform 0.3s ease;
-}
-
-.search-logo:hover {
-  transform: scale(1.05);
-}
 
 .search-input-container {
   position: relative;
@@ -463,7 +453,13 @@ header h1 {
 
 #prevBtn,
 #nextBtn {
-  display: flex !important;
+  display: flex;
+}
+
+.nav-arrow .icon-arrow-left,
+.nav-arrow .icon-arrow-right {
+  width: 3rem;
+  height: 3rem;
 }
 
 .dictionary-selector {
@@ -588,6 +584,139 @@ header h1 {
   font-family: var(--font);
 }
 
+/* ── Page Indicator ── */
+
+.page-indicator {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-color);
+  opacity: 0.55;
+  padding: 0.4rem 0 0.2rem;
+  user-select: none;
+}
+
+/* ── Dark mode select (replaces old toggle) ── */
+
+/* Dark mode override (manual, additive to prefers-color-scheme) */
+body.dark-mode {
+  --background-color: #121212;
+  --text-color: #f0f0f0;
+  --header-color: #ff4b55;
+  --search-color: #ff8a5c;
+  --border-color: #444;
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --control-background: color-mix(in srgb, #121212 88%, white);
+}
+
+body.dark-mode #mainImage[src*="images/"],
+body.dark-mode #mainImage2[src*="images/"] {
+  filter: invert(90%);
+  transition: filter 0.3s ease;
+}
+
+body.dark-mode .icon {
+  filter: invert(80%);
+}
+
+/* ── Fullscreen ── */
+
+.result-container.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  background: var(--background-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.result-container.fullscreen #mainImage {
+  max-height: 100vh;
+}
+
+.result-container.fullscreen .page-indicator {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  padding: 0.3rem 1rem;
+  border-radius: 12px;
+  opacity: 0.8;
+}
+
+/* ── Spread / dual-page mode ── */
+
+#mainImage2.spread-image {
+  display: none;
+}
+
+.result-container.spread-mode {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  max-width: 1100px;
+  width: 95%;
+  gap: 0;
+}
+
+.result-container.spread-mode #mainImage,
+.result-container.spread-mode #mainImage2 {
+  display: block;
+  width: 50%;
+  max-height: 85vh;
+  object-fit: contain;
+}
+
+.result-container.spread-mode .nav-arrow {
+  width: 10%;
+}
+
+.result-container.spread-mode .page-indicator {
+  position: absolute;
+  bottom: -1.2rem;
+  left: 0;
+  right: 0;
+}
+
+/* Placeholder images in spread mode */
+.result-container.spread-mode #mainImage2 {
+  display: block;
+}
+
+.result-container.spread-mode #mainImage[src*="data:image"] {
+  background: color-mix(in srgb, var(--border-color) 16%, transparent);
+}
+
+.result-container.spread-mode #mainImage2[src*="data:image"] {
+  background: color-mix(in srgb, var(--border-color) 16%, transparent);
+}
+
+/* ── Touch swipe zones ── */
+
+.swipe-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  z-index: 99;
+  cursor: pointer;
+}
+
+.swipe-zone.left {
+  left: 0;
+}
+
+.swipe-zone.right {
+  right: 0;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
 
@@ -596,6 +725,10 @@ header h1 {
   .sidebar-header h3,
   .sidebar-content {
     font-size: smaller;
+  }
+
+  #fullscreenBtn {
+    display: none;
   }
 
   .action-btn {
@@ -608,19 +741,30 @@ header h1 {
     height: 35px;
   }
 
-  .search-logo {
-    display: none;
-  }
-
   .result-container {
     width: 95%;
     max-width: 95%;
   }
 
   .nav-arrow {
-    width: 40%;
+    width: 18%;
     height: 90%;
     top: 10%;
+    opacity: 0.25;
+  }
+
+  .result-container:hover .nav-arrow {
+    opacity: 0.25;
+  }
+
+  .nav-arrow:hover {
+    opacity: 1;
+  }
+
+  .nav-arrow .icon-arrow-left,
+  .nav-arrow .icon-arrow-right {
+    width: 2rem;
+    height: 2rem;
   }
 
   #prevBtn {
@@ -654,6 +798,10 @@ header h1 {
   .settings-panel {
     right: -52px;
     min-width: 200px;
+  }
+
+  #spreadMode {
+    display: none;
   }
 }
 
