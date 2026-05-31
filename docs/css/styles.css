@@ -1,6 +1,7 @@
 @font-face {
   font-family: "KingHwaOldSong";
-  src: url("./kinghwaoldsong-v3-lite.woff") format("woff");
+  src: url("../assets/fonts/kinghwaoldsong-v3-lite.woff") format("woff");
+  unicode-range: U+4E00-9FFF, U+3000, U+3400-4DBF;
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -107,11 +108,9 @@ header h1 {
   outline: none;
   padding: 0.8rem 1rem;
   color: var(--text-color);
-  background-color: color-mix(
-    in srgb,
-    var(--background-color) 80%,
-    var(--border-color)
-  );
+  background-color: color-mix(in srgb,
+      var(--background-color) 80%,
+      var(--border-color));
   font-size: 1rem;
 }
 
@@ -591,6 +590,7 @@ header h1 {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
+
   .search-input,
   #searchResult,
   .sidebar-header h3,

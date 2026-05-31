@@ -1,0 +1,51 @@
+/* Icons */
+.icon {
+  width: 1.5em;
+  height: 1.5em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Search icon */
+.icon-search {
+  background: url("../images/icon/search.svg") no-repeat center center;
+}
+
+/* List icon */
+.icon-list {
+  background: url("../images/icon/table-of-contents.svg") no-repeat center center;
+}
+
+/* Spell check icon */
+.icon-spell-check {
+  background: url("../images/icon/spell-check.svg") no-repeat center center;
+}
+
+.icon-info {
+  background: url("../images/icon/info.svg") no-repeat center center;
+  background-size: contain;
+  width: 5rem;
+  height: 5rem;
+}
+
+.icon-shuffle {
+  background: url("../images/icon/shuffle.svg") no-repeat center center;
+}
+
+.icon-arrow-left {
+  background: url("../images/icon/left.svg") no-repeat center center;
+  background-size: contain;
+}
+
+.icon-arrow-right {
+  background: url("../images/icon/right.svg") no-repeat center center;
+  background-size: contain;
+  width: 5rem;
+  height: 5rem;
+}
+
+.icon-settings {
+  background: url("../images/icon/settings.svg") no-repeat center center;
+  background-size: contain;
+}

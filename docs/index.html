@@ -13,12 +13,8 @@
     <link rel="icon" href="favicon.ico">
     <link rel="manifest" href="manifest.json">
     <link rel="preconnect" href="https://raw.githubusercontent.com">
-    <link rel="preconnect" href="https://cdn.jsdmirror.com">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net">
-    <link rel="preconnect" href="https://fastly.jsdelivr.net">
-    <link rel="preconnect" href="https://ghproxy.net">
-    <link rel="stylesheet" href="assets/styles.css">
-    <link rel="stylesheet" href="assets/icons.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/icons.css">
 </head>
 
 <body>
@@ -29,7 +25,7 @@
             <!-- 下拉选择词典 -->
             <div class="dictionary-selector">
                 <div class="dict-selector-container">
-                    <img id="dictLogo" src="assets/logo2.png" alt="Dictionary Logo" class="dict-logo">
+                    <img id="dictLogo" src="images/logos/logo2.png" alt="Dictionary Logo" class="dict-logo">
                     <select id="dictSelector" class="dict-selector" title="选择词典">
                         <!-- Will be populated by JavaScript -->
                     </select>
@@ -110,7 +106,7 @@
     </div>
 
     <section class="result-container">
-        <img id="mainImage" alt="Image" src="assets/images/0001.png" style="opacity: 0.3;">
+        <img id="mainImage" alt="Image" src="images/0001.png" style="opacity: 0.3;">
         <div id="prevBtn" class="nav-arrow">
             <span class="icon icon-arrow-left"></span>
         </div>
@@ -119,7 +115,8 @@
         </div>
     </section>
 
-    <script src="assets/script.js"></script>
+    <script src="js/dictkit.js"></script>
+    <script src="js/script.js"></script>
 </body>
 
 </html>

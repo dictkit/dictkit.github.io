@@ -2,7 +2,7 @@
   "name": "汉语字典词典在线版",
   "short_name": "字典词典",
   "description": "汉语字典词典在线检索，支持拼音、字词和页码查询。",
-  "start_url": "/",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#fdfcf8",
   "theme_color": "#ec0015",
