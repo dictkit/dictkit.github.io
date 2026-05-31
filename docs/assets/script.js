@@ -15,6 +15,43 @@ const PINYIN_MAP = {
 }
 const DEFAULT_IMAGE = `assets/images/${DEFAULT_IMAGE_INDEX}.png`;
 const DATA_FILE = "dicts.json";
+const STORAGE_KEYS = {
+    font: "dictkit:font",
+    proxy: "dictkit:proxy",
+};
+
+const FONT_OPTIONS = [
+    {
+        id: "kinghwa",
+        name: "京华老宋",
+        stack: "'KingHwaOldSong', 'Times New Roman', system-ui, -apple-system, serif",
+    },
+    {
+        id: "system",
+        name: "系统默认",
+        stack: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    },
+    {
+        id: "song",
+        name: "宋体",
+        stack: "'SimSun', 'Songti SC', 'Noto Serif CJK SC', serif",
+    },
+    {
+        id: "hei",
+        name: "黑体",
+        stack: "'PingFang SC', 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif",
+    },
+    {
+        id: "kai",
+        name: "楷体",
+        stack: "'KaiTi', 'Kaiti SC', 'STKaiti', serif",
+    },
+    {
+        id: "fangsong",
+        name: "仿宋",
+        stack: "'FangSong', 'STFangsong', serif",
+    },
+];
 
 let fileInfoList = [];
 let urlProxyList = [];
@@ -22,11 +59,81 @@ let metaConfigs = {};
 let repoConfigs = {};
 let currentDictRepo = null;
 let currentImageIndex = DEFAULT_IMAGE_INDEX;
+let selectedProxyId = "auto";
+let searchIsSetup = false;
+let imageLoadToken = 0;
 
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const pinyinRegExp = new RegExp(pinyinKeys, "gi");
 const keyToc = "toc";
 const keyPinyin = "pinyin";
+
+function getStorageValue(key, fallback) {
+    try {
+        return localStorage.getItem(key) || fallback;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function setStorageValue(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch (error) {
+        if (DEBUG) {
+            console.warn("Unable to persist preference", key, error);
+        }
+    }
+}
+
+function inferProxyName(url, index) {
+    if (url.includes("jsdmirror")) return "JSDMirror";
+    if (url.includes("fastly.jsdelivr")) return "jsDelivr Fastly";
+    if (url.includes("cdn.jsdelivr")) return "jsDelivr";
+    if (url.includes("ghproxy")) return "GHProxy";
+    if (url.includes("raw.githubusercontent")) return "GitHub Raw";
+    return `资源 ${index + 1}`;
+}
+
+function normalizeProxyEntries(urls) {
+    return (urls || [])
+        .map((entry, index) => {
+            if (typeof entry === "string") {
+                return {
+                    id: `source-${index}`,
+                    name: inferProxyName(entry, index),
+                    url: entry,
+                };
+            }
+            if (!entry || !entry.url) {
+                return null;
+            }
+            return {
+                id: entry.id || `source-${index}`,
+                name: entry.name || inferProxyName(entry.url, index),
+                url: entry.url,
+            };
+        })
+        .filter(Boolean);
+}
+
+function getProxyCandidates(urls, proxyId) {
+    if (!proxyId || proxyId === "auto") {
+        return urls;
+    }
+    const selected = urls.find(proxy => proxy.id === proxyId);
+    if (!selected) {
+        return urls;
+    }
+    return [selected, ...urls.filter(proxy => proxy.id !== proxyId)];
+}
+
+function setStatusMessage(message) {
+    const divResult = document.getElementById("searchResult");
+    if (divResult) {
+        divResult.textContent = message;
+    }
+}
 
 const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
 const proxyCache = {
@@ -36,7 +143,7 @@ const proxyCache = {
 
     updateProxy(proxy) {
         this.lastSuccessProxy = proxy;
-        this.lastSuccessTime = new Date();
+        this.lastSuccessTime = Date.now();
         this.failedProxies.delete(proxy);
     },
 
@@ -44,17 +151,19 @@ const proxyCache = {
         this.failedProxies.add(proxy);
     },
 
-    getBestProxy(urls) {
+    getBestProxy(urls, proxyId = "auto") {
         // 获取候选
         const now = Date.now();
+        const candidates = getProxyCandidates(urls, proxyId);
         if (this.lastSuccessProxy &&
+            candidates.includes(this.lastSuccessProxy) &&
             now - this.lastSuccessTime < PROXY_CACHE_DURATION) {
             return this.lastSuccessProxy;
         }
         if (now - this.lastSuccessTime >= PROXY_CACHE_DURATION) {
             this.failedProxies.clear();
         }
-        return urls.find(proxy => !this.failedProxies.has(proxy)) || urls[0];
+        return candidates.find(proxy => !this.failedProxies.has(proxy)) || null;
     }
 };
 
@@ -171,6 +280,85 @@ function isNumeric(str) {
     return !isNaN(str) && !isNaN(parseInt(str));
 }
 
+function applyFontPreference(fontId) {
+    const selectedFont = FONT_OPTIONS.find(option => option.id === fontId) || FONT_OPTIONS[0];
+    document.documentElement.style.setProperty("--font", selectedFont.stack);
+    setStorageValue(STORAGE_KEYS.font, selectedFont.id);
+    return selectedFont.id;
+}
+
+function initializeFontSelector() {
+    const fontSelector = document.getElementById("fontSelector");
+    if (!fontSelector) return;
+
+    fontSelector.innerHTML = "";
+    FONT_OPTIONS.forEach((font) => {
+        const option = document.createElement("option");
+        option.value = font.id;
+        option.textContent = font.name;
+        fontSelector.appendChild(option);
+    });
+
+    const fontId = getStorageValue(STORAGE_KEYS.font, FONT_OPTIONS[0].id);
+    fontSelector.value = applyFontPreference(fontId);
+    fontSelector.addEventListener("change", (event) => {
+        applyFontPreference(event.target.value);
+    });
+}
+
+function initializeProxySelector() {
+    const proxySelector = document.getElementById("proxySelector");
+    if (!proxySelector) return;
+
+    proxySelector.innerHTML = "";
+    const autoOption = document.createElement("option");
+    autoOption.value = "auto";
+    autoOption.textContent = "自动选择";
+    proxySelector.appendChild(autoOption);
+
+    urlProxyList.forEach((proxy) => {
+        const option = document.createElement("option");
+        option.value = proxy.id;
+        option.textContent = proxy.name;
+        proxySelector.appendChild(option);
+    });
+
+    selectedProxyId = getStorageValue(STORAGE_KEYS.proxy, "auto");
+    if (!getProxyCandidates(urlProxyList, selectedProxyId).length) {
+        selectedProxyId = "auto";
+    }
+    proxySelector.value = selectedProxyId;
+    proxySelector.addEventListener("change", (event) => {
+        selectedProxyId = event.target.value;
+        proxyCache.failedProxies.clear();
+        proxyCache.lastSuccessProxy = null;
+        setStorageValue(STORAGE_KEYS.proxy, selectedProxyId);
+    });
+}
+
+function initializeSettingsPanel() {
+    const settingsToggle = document.getElementById("settingsToggle");
+    const settingsPanel = document.getElementById("settingsPanel");
+    if (!settingsToggle || !settingsPanel) return;
+
+    initializeFontSelector();
+    initializeProxySelector();
+
+    settingsToggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const isOpen = settingsPanel.classList.toggle("active");
+        settingsToggle.classList.toggle("active", isOpen);
+        settingsToggle.setAttribute("aria-expanded", String(isOpen));
+    });
+
+    settingsPanel.addEventListener("click", event => event.stopPropagation());
+    document.addEventListener("click", () => {
+        settingsPanel.classList.remove("active");
+        settingsToggle.classList.remove("active");
+        settingsToggle.setAttribute("aria-expanded", "false");
+    });
+}
+
 async function getImageLink(owner, repo, branch, imagePath) {
     // Check cache first
     if (imageCache.isCached(imagePath)) {
@@ -203,19 +391,22 @@ async function getImageLink(owner, repo, branch, imagePath) {
 async function _loadImageFromRemote(owner, repo, branch, imagePath) {
     const defaultImageUrl = DEFAULT_IMAGE;
 
-    // Try to load actual image
-    const proxy = proxyCache.getBestProxy(urlProxyList);
-    const imageUrl = buildUrl(proxy, owner, repo, branch, imagePath);
+    const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
+    let proxy = proxyCache.getBestProxy(candidates);
 
-    try {
-        const response = await fetch(imageUrl, { method: "HEAD" });
-        if (response.ok) {
-            proxyCache.updateProxy(proxy);
-            return imageUrl;
+    while (proxy) {
+        const imageUrl = buildUrl(proxy.url, owner, repo, branch, imagePath);
+        try {
+            const response = await fetch(imageUrl, { method: "HEAD" });
+            if (response.ok) {
+                proxyCache.updateProxy(proxy);
+                return imageUrl;
+            }
+        } catch (error) {
+            console.warn(`Failed to load image from ${proxy.name}`, error);
         }
-    } catch (error) {
-        console.warn(`Failed to load image from ${proxy}`, error);
         proxyCache.addFail(proxy);
+        proxy = proxyCache.getBestProxy(candidates);
     }
 
     return defaultImageUrl;
@@ -225,9 +416,10 @@ async function initializeDictSelector() {
     try {
         const data = await loadJSONFile(DATA_FILE);
         const dictConfigs = data.dicts || [];
-        urlProxyList = data.urls || [];
+        urlProxyList = normalizeProxyEntries(data.urls || []);
         metaConfigs = data.config || {}
         fileInfoList = data.files || [];
+        initializeSettingsPanel();
 
         const dictSelector = document.getElementById("dictSelector");
         const dictLogo = document.getElementById("dictLogo");
@@ -265,36 +457,33 @@ async function initializeDictSelector() {
                 repoConfigs[item.repo] = { ...repoConfigs[item.repo], ...item.data };
             });
 
+            dictSelector.addEventListener("change", async (e) => {
+                const selectedOption = e.target.options[e.target.selectedIndex];
+                const selectedDict = dictConfigs.find(dict => dict.repo === e.target.value);
+
+                if (!selectedDict) {
+                    return
+                }
+                currentDictRepo = selectedDict.repo;
+                if (DEBUG) {
+                    console.log("Switch dict", currentDictRepo);
+                }
+
+                // Update the logo
+                dictLogo.src = selectedOption.dataset.logo;
+                dictLogo.alt = `${selectedDict.name} Logo`;
+                document.getElementById("searchInput").value = "";
+                document.getElementById("searchSuggestions").textContent = "";
+                document.getElementById("searchResult").textContent = "";
+                await initializeDictionaryView();
+            });
+
             // Set the logo for the first dictionary
             dictLogo.src = repoConfigs[currentDictRepo].logo;
             dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
             await initializeFromURL();
+            document.body.dataset.ready = "true";
         }
-
-        // Add change event listener
-        dictSelector.addEventListener("change", async (e) => {
-            const selectedOption = e.target.options[e.target.selectedIndex];
-            const selectedDict = dictConfigs.find(dict => dict.repo === e.target.value);
-
-            if (!selectedDict) {
-                return
-            }
-            currentDictRepo = selectedDict.repo;
-            if (DEBUG) {
-                console.log("Switch dict", currentDictRepo);
-            }
-
-            // Clear image cache for previous dictionary
-            // imageCache.clearCurrentDict();
-
-            // Update the logo
-            dictLogo.src = selectedOption.dataset.logo;
-            dictLogo.alt = `${selectedDict.name} Logo`;
-            document.getElementById("searchInput").value = "";
-            document.getElementById("searchSuggestions").innerHTML = "";
-            document.getElementById("searchResult").innerHTML = "";
-            await initializeDictionaryView();
-        });
     } catch (error) {
         console.error("Failed to load dictionary list:", error);
     }
@@ -332,28 +521,31 @@ async function initializeDictData(repo) {
     }
 
     const fileList = getFileList(files, dataPath);
-    // Try to load each file from available mirrors
-    let success = false;
     for (const { key, path } of fileList) {
         currentDictData[key] = null;
-        const proxy = proxyCache.getBestProxy(urlProxyList);
-        try {
-            const repoURL = buildUrl(proxy, owner, repo, branch, path);
-            const result = await loadJSONFile(repoURL);
-            if (result) {
-                currentDictData[key] = result;
-                proxyCache.updateProxy(proxy)
-                success = true;
-                continue;
+        const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
+        let proxy = proxyCache.getBestProxy(candidates);
+        let fileLoaded = false;
+
+        while (proxy) {
+            try {
+                const repoURL = buildUrl(proxy.url, owner, repo, branch, path);
+                const result = await loadJSONFile(repoURL);
+                if (result) {
+                    currentDictData[key] = result;
+                    proxyCache.updateProxy(proxy);
+                    fileLoaded = true;
+                    break;
+                }
+            } catch (error) {
+                console.warn(`Failed to load ${path} from ${proxy.name}`, error);
             }
-        } catch (error) {
-            console.warn(`Failed to load ${path} from ${proxy}`, error);
             proxyCache.addFail(proxy);
+            proxy = proxyCache.getBestProxy(candidates);
         }
 
-        if (!success) {
+        if (!fileLoaded) {
             console.error(`Failed to load ${path} from all mirrors`);
-            // return false;
         }
     }
 
@@ -382,7 +574,7 @@ async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, 
 
         if (!imageCache.isCached(imagePath) && !imageCache.preloadedImages.has(imagePath)) {
             if (offset === 0) {
-                document.getElementById("searchResult").innerHTML = "加载中……";
+                setStatusMessage("加载中……");
             }
             preloadPromises.push(
                 imageURL.then(url => {
@@ -419,7 +611,7 @@ async function searchImages(limit) {
     const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
     const searchInput = document.getElementById("searchInput").value.trim();
     const divResult = document.getElementById("searchResult");
-    divResult.innerHTML = "";
+    divResult.textContent = "";
 
     // 输入为空则忽略
     if (!searchInput) {
@@ -431,10 +623,10 @@ async function searchImages(limit) {
         const pageNumber = parseInt(searchInput);
         const maxPage = pageConfigs.content.count;
         if (pageNumber > 0 && pageNumber <= maxPage) {
-            currentImageIndex = pageNumber;
+            currentImageIndex = padPage(pageNumber);
             await showImage();
         } else {
-            divResult.innerHTML = `搜索页面超出范围（1～${maxPage}页）`;
+            divResult.textContent = `搜索页面超出范围（1～${maxPage}页）`;
         }
         return;
     }
@@ -451,12 +643,13 @@ async function searchImages(limit) {
         document.getElementById("searchSuggestions").classList.remove("visible");
     } else {
         // No results found
-        divResult.innerHTML = `未找到与“${searchInput}”相关的页面`;
+        divResult.textContent = `未找到与“${searchInput}”相关的页面`;
     }
 }
 
 async function showImage(limit = 0) {
     const imgElement = document.getElementById("mainImage");
+    const loadToken = ++imageLoadToken;
     imgElement.style.opacity = "0.3";
     try {
         const imageUrl = await preLoadImages(currentImageIndex, limit);
@@ -465,6 +658,10 @@ async function showImage(limit = 0) {
         // Use a Promise to handle the image loading
         await new Promise((resolve, reject) => {
             tempImg.onload = () => {
+                if (loadToken !== imageLoadToken) {
+                    resolve();
+                    return;
+                }
                 // Image loaded successfully, update the main image
                 imgElement.src = imageUrl;
                 imgElement.style.opacity = "1";
@@ -472,6 +669,10 @@ async function showImage(limit = 0) {
             };
 
             tempImg.onerror = () => {
+                if (loadToken !== imageLoadToken) {
+                    resolve();
+                    return;
+                }
                 // Image failed to load, use fallback
                 console.error("Image loading failed for:", imageUrl);
                 imgElement.src = DEFAULT_IMAGE;
@@ -482,14 +683,21 @@ async function showImage(limit = 0) {
             // Start loading the image
             tempImg.src = imageUrl;
         });
-        document.getElementById("searchResult").innerHTML = "";
+        if (loadToken === imageLoadToken) {
+            setStatusMessage("");
+        }
     } catch (error) {
-        document.getElementById("searchResult").innerHTML = "加载失败";
+        if (loadToken !== imageLoadToken) {
+            return;
+        }
+        setStatusMessage("加载失败");
         console.error("Error loading image:", error);
         imgElement.src = DEFAULT_IMAGE;
         imgElement.style.opacity = "0.3";
     }
-    updateURLParameters();
+    if (loadToken === imageLoadToken) {
+        updateURLParameters();
+    }
 }
 
 function changePage(currentPage, offset = 1) {
@@ -572,10 +780,13 @@ async function setupBookmarks() {
             // 创建分组标题（可点击）
             const groupHeader = document.createElement("div");
             groupHeader.className = "bookmark-group-header";
-            groupHeader.innerHTML = `
-                <span class="group-title">${item.title}</span>
-                <span class="group-arrow">▼</span>
-            `;
+            const groupTitle = document.createElement("span");
+            groupTitle.className = "group-title";
+            groupTitle.textContent = item.title;
+            const groupArrow = document.createElement("span");
+            groupArrow.className = "group-arrow";
+            groupArrow.textContent = "▼";
+            groupHeader.append(groupTitle, groupArrow);
 
             // 添加点击事件来切换显示/隐藏子项
             groupHeader.addEventListener("click", () => {
@@ -612,10 +823,15 @@ async function setupBookmarks() {
     function createBookmarkElement(title, page, showPage) {
         const bookmarkElement = document.createElement("div");
         bookmarkElement.className = "bookmark-item";
-        bookmarkElement.innerHTML = `<span>${title}</span>`;
+        const titleElement = document.createElement("span");
+        titleElement.textContent = title;
+        bookmarkElement.appendChild(titleElement);
         if (showPage) {
             const actualPage = parseInt(String(page).replace(/^[A-Za-z]+/, ""), 10);
-            bookmarkElement.innerHTML += `<span class="page-number">第 ${actualPage} 页</span>`;
+            const pageElement = document.createElement("span");
+            pageElement.className = "page-number";
+            pageElement.textContent = `第 ${actualPage} 页`;
+            bookmarkElement.appendChild(pageElement);
         }
         bookmarkElement.onclick = async (e) => {
             if (e.target.closest(".bookmark-group-header")) return;
@@ -679,7 +895,7 @@ function searchInDictionary(query, limit) {
     for (const { key, type, weight } of searchCategories) {
         if (!currentDictData[key]) continue;
         if (key === keyPinyin && pinyinQuery !== normalizedQuery) {
-            if (currentDictData[key].startsWith(pinyinQuery)) {
+            if (Object.hasOwn(currentDictData[key], pinyinQuery)) {
                 results.push({
                     term: pinyinQuery,
                     page: padPage(currentDictData[key][pinyinQuery]),
@@ -736,10 +952,12 @@ function showSearchSuggestions(query, limit) {
     topResults.forEach((result, index) => {
         const item = document.createElement("div");
         item.className = "suggestion-item" + (index === highlightedIndex ? " highlighted" : "");
-        item.innerHTML = `
-            <span>${result.term}</span>
-            <span class="suggestion-type">${result.type} · 第 ${result.page} 页</span>
-        `;
+        const term = document.createElement("span");
+        term.textContent = result.term;
+        const type = document.createElement("span");
+        type.className = "suggestion-type";
+        type.textContent = `${result.type} · 第 ${result.page} 页`;
+        item.append(term, type);
 
         item.addEventListener("click", async () => {
             currentImageIndex = result.page;
@@ -752,7 +970,9 @@ function showSearchSuggestions(query, limit) {
     if (results.length > limit) {
         const item = document.createElement("div");
         item.className = "suggestion-item";
-        item.innerHTML = "<span>……</span>";
+        const more = document.createElement("span");
+        more.textContent = "……";
+        item.appendChild(more);
         suggestionsContainer.appendChild(item);
     }
 
@@ -781,6 +1001,9 @@ function highlightSuggestion(direction) {
 }
 
 function setupSearch(limit) {
+    if (searchIsSetup) return;
+    searchIsSetup = true;
+
     const searchInput = document.getElementById("searchInput");
     const searchBtn = document.getElementById("searchBtn");
     const suggestionsContainer = document.getElementById("searchSuggestions");
@@ -884,7 +1107,7 @@ async function initializeFromURL() {
         }
         if (!isSuccess) {
             const divResult = document.getElementById("searchResult");
-            divResult.innerHTML = "页码参数格式异常";
+            divResult.textContent = "页码参数格式异常";
         }
     }
     // updateURLParameters();

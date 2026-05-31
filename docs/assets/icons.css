@@ -22,6 +22,14 @@
   background: url("./icon/spell-check.svg") no-repeat center center;
 }
 
+.icon-info {
+  background: url("./icon/info.svg") no-repeat center center;
+  background-size: contain;
+  width: 5rem;
+  height: 5rem;
+}
+
+
 .icon-shuffle {
   background: url("./icon/shuffle.svg") no-repeat center center;
 }
@@ -29,8 +37,6 @@
 .icon-arrow-left {
   background: url("./icon/left.svg") no-repeat center center;
   background-size: contain;
-  width: 5rem;
-  height: 5rem;
 }
 
 .icon-arrow-right {
@@ -38,4 +44,9 @@
   background-size: contain;
   width: 5rem;
   height: 5rem;
+}
+
+.icon-settings {
+  background: url("./icon/settings.svg") no-repeat center center;
+  background-size: contain;
 }

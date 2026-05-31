@@ -37,12 +37,28 @@
 
             <div class="search-buttons">
                 <button class="action-btn" id="sidebarToggle" title="词典目录">
-                    <!-- <i class="fas fa-list"></i> -->
                     <span class="icon icon-list"></span>
                 </button>
+
+                <div class="settings-wrapper">
+                    <button class="action-btn" id="settingsToggle" title="字体与资源设置" aria-expanded="false"
+                        aria-controls="settingsPanel">
+                        <span class="settings-icon icon icon-settings" aria-hidden="true"></span>
+                    </button>
+                    <div class="settings-panel" id="settingsPanel">
+                        <label class="settings-field" for="fontSelector">
+                            <span>字体</span>
+                            <select id="fontSelector" class="settings-select"></select>
+                        </label>
+                        <label class="settings-field" for="proxySelector">
+                            <span>来源</span>
+                            <select id="proxySelector" class="settings-select"></select>
+                        </label>
+                    </div>
+                </div>
+
                 <button class="action-btn" id="tipToggle" title="拼音提示">
-                    <!-- <i class="fas fa-spell-check"></i> -->
-                    <span class="icon icon-spell-check"></span>
+                    <span class="icon icon-info"></span>
                 </button>
 
                 <button class="search-btn" id="searchBtn" title="搜索">

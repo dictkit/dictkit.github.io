@@ -14,6 +14,7 @@
   --border-color: #ccc;
   --shadow-color: rgba(0, 0, 0, 0.2);
   --highlight-color: rgba(43, 43, 43, 0.5);
+  --control-background: color-mix(in srgb, var(--background-color) 82%, white);
   --font: "KingHwaOldSong", "Times New Roman", system-ui, -apple-system, serif;
 }
 
@@ -26,6 +27,7 @@
     --search-color: #ff8a5c;
     --border-color: #444;
     --shadow-color: rgba(0, 0, 0, 0.5);
+    --control-background: color-mix(in srgb, var(--background-color) 88%, white);
   }
 
   #mainImage[src*="images/"] {
@@ -66,15 +68,16 @@ header h1 {
   margin: 0 auto;
   width: 90%;
   max-width: 800px;
-  border-radius: 15px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
+  padding: 0.45rem 0.6rem;
   transition: all 0.3s ease;
-  border: 3px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  background: var(--control-background);
 }
 
 .search-container:focus-within {
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
   border-color: var(--search-color);
 }
 
@@ -160,7 +163,7 @@ header h1 {
   background: var(--header-color);
   color: var(--text-color);
   border: none;
-  border-radius: 15%;
+  border-radius: 8px;
   height: 45px;
   width: 45px;
   display: flex;
@@ -189,6 +192,12 @@ header h1 {
   margin: 0 0.1rem;
   transition: all 0.2s ease;
   position: relative;
+  border-radius: 6px;
+}
+
+.action-btn:hover,
+.action-btn.active {
+  background: color-mix(in srgb, var(--border-color) 30%, transparent);
 }
 
 .action-btn:hover::after {
@@ -452,13 +461,70 @@ header h1 {
 .dict-selector {
   padding: 10px 10px 10px 40px;
   border: 1px solid var(--border-color);
-  border-radius: 5px;
+  border-radius: 8px;
   font-size: 1.1rem;
   background-color: var(--background-color);
   color: var(--text-color);
   cursor: pointer;
   appearance: none;
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.settings-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settings-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  min-width: 220px;
+  display: none;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  background: var(--background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  z-index: 1100;
+  text-align: left;
+}
+
+.settings-panel.active {
+  display: grid;
+}
+
+.settings-field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-color);
+  font-family: var(--font);
+  font-size: 0.85rem;
+}
+
+.settings-select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--control-background);
+  color: var(--text-color);
+  padding: 0.45rem 0.55rem;
+  font-family: var(--font);
+  font-size: 0.95rem;
+}
+
+.settings-select:focus {
+  outline: none;
+  border-color: var(--search-color);
+  box-shadow: 0 0 0 2px rgba(247, 111, 67, 0.18);
 }
 
 .dict-selector:focus {
@@ -486,6 +552,7 @@ header h1 {
 .search-tip h4,
 .sidebar,
 .dict-selector,
+.settings-select,
 #searchResult {
   font-family: var(--font);
 }
@@ -550,6 +617,11 @@ header h1 {
   /* Ensure the logo is visible and properly sized */
   .dict-selector-container {
     min-width: 40px;
+  }
+
+  .settings-panel {
+    right: -52px;
+    min-width: 200px;
   }
 }
 
