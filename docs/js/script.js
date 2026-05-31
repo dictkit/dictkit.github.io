@@ -10,7 +10,7 @@ let highlightedIndex = -1;
 let suggestionSearchTimer = null;
 let font_options = DEFAULT_FONTS;
 let pendingDictLoads = {};
-let spreadMode = false;
+let isSpreadMode = false;
 const DARK_MODE_KEY = "dictkit:darkmode";
 
 // ── Page Indicator ──
@@ -20,7 +20,7 @@ function updatePageIndicator() {
     if (!el) return;
     const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
     const total = pageConfigs.header.count + pageConfigs.content.count + pageConfigs.footer.count;
-    if (spreadMode && isContentPage(currentImageIndex)) {
+    if (isSpreadMode && isContentPage(currentImageIndex)) {
         const num = parseInt(currentImageIndex, 10);
         if (!Number.isNaN(num) && num >= 1 && num <= pageConfigs.content.count) {
             let text;
@@ -200,9 +200,6 @@ function toggleFullscreen() {
 }
 
 // ── Spread / Dual-page Mode ──
-
-const PLACEHOLDER_IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='600'%3E%3Crect width='400' height='600' fill='%23f0f0f0'/%3E%3C/svg%3E";
-
 function isContentPage(page) {
     return /^\d+$/.test(String(page));
 }
@@ -222,13 +219,13 @@ function initializeSpreadMode() {
     if (!sel) return;
     const stored = getStorageValue("dictkit:spread", "0");
     sel.value = stored;
-    spreadMode = stored === "1";
+    isSpreadMode = stored === "1";
     // Don't apply spread class here — showImage manages it after page ready
 
     sel.addEventListener("change", async () => {
-        spreadMode = sel.value === "1";
+        isSpreadMode = sel.value === "1";
         setStorageValue("dictkit:spread", sel.value);
-        if (spreadMode) {
+        if (isSpreadMode) {
             const num = parseInt(currentImageIndex, 10);
             if (isContentPage(currentImageIndex) && !Number.isNaN(num)) {
                 if (num > 1 && num % 2 === 1) {
@@ -302,8 +299,8 @@ async function showImage(limit = 0) {
     setStatusMessage("加载中……");
     try {
         // Sync spread CSS — shows spread only for content pages
-        (spreadMode ? applySpreadClass : removeSpreadClass)();
-        const isSpread = spreadMode && isContentPage(currentImageIndex);
+        (isSpreadMode ? applySpreadClass : removeSpreadClass)();
+        const isSpread = isSpreadMode && isContentPage(currentImageIndex);
         if (isSpread) {
             await loadSpreadView(img, img2, token);
         } else {
@@ -342,7 +339,7 @@ async function loadSpreadView(img, img2, token) {
         // Page 1 on the right, placeholder on the left
         const url = await preLoadImages(currentImageIndex, 0);
         if (token !== imageLoadToken) return;
-        img.src = PLACEHOLDER_IMG;
+        img.src = EMPTY_IMAGE;
         img.style.opacity = "1";
         img2.src = url;
         img2.style.opacity = "1";
@@ -365,14 +362,14 @@ async function loadSpreadView(img, img2, token) {
         if (token !== imageLoadToken) return;
         img.src = url;
         img.style.opacity = "1";
-        img2.src = url2 || PLACEHOLDER_IMG;
+        img2.src = url2 || EMPTY_IMAGE;
         img2.style.opacity = "1";
     }
     setStatusMessage("");
 }
 
 async function changeImage(nextPage) {
-    if (spreadMode && isContentPage(currentImageIndex)) {
+    if (isSpreadMode && isContentPage(currentImageIndex)) {
         const num = parseInt(currentImageIndex, 10);
         if (!Number.isNaN(num)) {
             if (!nextPage && num <= 1) {
@@ -803,7 +800,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         } else if (event.key === "Home") {
             event.preventDefault();
             const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
-            if (spreadMode) {
+            if (isSpreadMode) {
                 currentImageIndex = padPage(2);
             } else {
                 currentImageIndex = getFirstPageId(pageConfigs);
@@ -811,7 +808,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             await showImage(IMAGE_CACHE_CONFIG.preloadCount);
         } else if (event.key === "End") {
             event.preventDefault();
-            if (spreadMode) {
+            if (isSpreadMode) {
                 const pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE;
                 let last = pageConfigs.content.count;
                 if (last % 2 === 1) last--;

@@ -21,6 +21,7 @@ const PINYIN_MAP = {
     ŋ: "ng"
 };
 const DEFAULT_IMAGE = `images/${DEFAULT_IMAGE_INDEX}.png`;
+const EMPTY_IMAGE = `images/empty.svg`;
 const DATA_FILE = "data/dicts.json";
 const STORAGE_KEYS = {
     font: "dictkit:font",

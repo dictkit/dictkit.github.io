@@ -9,8 +9,8 @@
     "imageSuffix": "png"
   },
   "fonts": [
-    { "id": "kinghwa", "name": "京华老宋", "stack": "'KingHwaOldSong', 'Times New Roman', system-ui, -apple-system, serif" },
-    { "id": "system", "name": "系统默认", "stack": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+    { "id": "kinghwa", "name": "京華老宋体", "stack": "'KingHwaOldSong', 'Times New Roman', system-ui, -apple-system, serif" },
+    { "id": "system", "name": "默认", "stack": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
     { "id": "song", "name": "宋体", "stack": "'SimSun', 'Songti SC', 'Noto Serif CJK SC', serif" },
     { "id": "fangsong", "name": "仿宋", "stack": "'FangSong', 'STFangsong', serif" },
     { "id": "hei", "name": "黑体", "stack": "'PingFang SC', 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" },
