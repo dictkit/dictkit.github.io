@@ -8,7 +8,7 @@
 let searchIsSetup = false;
 let highlightedIndex = -1;
 let suggestionSearchTimer = null;
-let font_options = [];
+let font_options = DEFAULT_FONTS;
 let pendingDictLoads = {};
 
 // ── DOM Helpers ──
@@ -423,14 +423,27 @@ async function initializeFromURL() {
 
     await initializeDictionaryView({ showImage: false });
 
+    // Ensure the target dict's data is loaded before search/navigation
+    if (pendingDictLoads[currentDictRepo]) {
+        try {
+            await pendingDictLoads[currentDictRepo];
+        } catch (err) {
+            console.warn(`Background load failed for ${currentDictRepo}:`, err);
+        }
+    }
+
     if (queryParam && !pageParam) {
         document.getElementById("searchInput").value = queryParam;
         document.getElementById("searchBtn").click();
     } else if (pageParam) {
-        const page = normalizePageId(pageParam);
+        const cleanedPage = String(pageParam).replace(/^0+/, "") || pageParam;
+        const page = normalizePageId(cleanedPage);
         if (page) {
             currentImageIndex = page;
             await showImage();
+        } else if (queryParam) {
+            document.getElementById("searchInput").value = queryParam;
+            document.getElementById("searchBtn").click();
         } else {
             document.getElementById("searchResult").textContent = "页码参数格式异常";
         }
@@ -510,7 +523,7 @@ async function initializeDictSelector() {
                 applyDictionarySelection(selected.repo, selected.logo, selected.name);
                 resetSearchUi();
                 imageCache.clearCurrentDict(prev);
-                currentImageIndex = getFirstPageId(repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE);
+                currentImageIndex = DEFAULT_IMAGE_INDEX;
                 await initializeDictionaryView();
             });
 
