@@ -62,11 +62,15 @@ let currentImageIndex = DEFAULT_IMAGE_INDEX;
 let selectedProxyId = "auto";
 let searchIsSetup = false;
 let imageLoadToken = 0;
+let highlightedIndex = -1;
+let suggestionSearchTimer = null;
 
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const pinyinRegExp = new RegExp(pinyinKeys, "gi");
 const keyToc = "toc";
 const keyPinyin = "pinyin";
+const SEARCH_SUGGESTION_DEBOUNCE_MS = 100;
+const SEARCH_SUGGESTION_MIN_LENGTH = 1;
 
 function getStorageValue(key, fallback) {
     try {
@@ -137,33 +141,65 @@ function setStatusMessage(message) {
 
 const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
 const proxyCache = {
-    lastSuccessProxy: null,
-    lastSuccessTime: 0,
-    failedProxies: new Set(),
-
-    updateProxy(proxy) {
-        this.lastSuccessProxy = proxy;
-        this.lastSuccessTime = Date.now();
-        this.failedProxies.delete(proxy);
+    states: {
+        image: {
+            lastSuccessProxy: null,
+            lastSuccessTime: 0,
+            failedProxies: new Set(),
+        },
+        metadata: {
+            lastSuccessProxy: null,
+            lastSuccessTime: 0,
+            failedProxies: new Set(),
+        },
     },
 
-    addFail(proxy) {
-        this.failedProxies.add(proxy);
+    getState(kind = "image") {
+        if (!this.states[kind]) {
+            this.states[kind] = {
+                lastSuccessProxy: null,
+                lastSuccessTime: 0,
+                failedProxies: new Set(),
+            };
+        }
+        return this.states[kind];
     },
 
-    getBestProxy(urls, proxyId = "auto") {
-        // 获取候选
+    updateProxy(proxy, kind = "image") {
+        const state = this.getState(kind);
+        state.lastSuccessProxy = proxy;
+        state.lastSuccessTime = Date.now();
+        state.failedProxies.delete(proxy);
+    },
+
+    addFail(proxy, kind = "image") {
+        this.getState(kind).failedProxies.add(proxy);
+    },
+
+    clear(kind = "image") {
+        const state = this.getState(kind);
+        state.lastSuccessProxy = null;
+        state.lastSuccessTime = 0;
+        state.failedProxies.clear();
+    },
+
+    clearAll() {
+        Object.keys(this.states).forEach(kind => this.clear(kind));
+    },
+
+    getBestProxy(urls, proxyId = "auto", kind = "image") {
         const now = Date.now();
+        const state = this.getState(kind);
         const candidates = getProxyCandidates(urls, proxyId);
-        if (this.lastSuccessProxy &&
-            candidates.includes(this.lastSuccessProxy) &&
-            now - this.lastSuccessTime < PROXY_CACHE_DURATION) {
-            return this.lastSuccessProxy;
+        if (state.lastSuccessProxy &&
+            candidates.includes(state.lastSuccessProxy) &&
+            now - state.lastSuccessTime < PROXY_CACHE_DURATION) {
+            return state.lastSuccessProxy;
         }
-        if (now - this.lastSuccessTime >= PROXY_CACHE_DURATION) {
-            this.failedProxies.clear();
+        if (now - state.lastSuccessTime >= PROXY_CACHE_DURATION) {
+            state.failedProxies.clear();
         }
-        return candidates.find(proxy => !this.failedProxies.has(proxy)) || null;
+        return candidates.find(proxy => !state.failedProxies.has(proxy)) || null;
     }
 };
 
@@ -221,15 +257,23 @@ const imageCache = {
     },
 
     // Clear cache for current dictionary
-    clearCurrentDict() {
-        const prefix = `${currentDictRepo}_`;
+    clearCurrentDict(dictRepo = currentDictRepo) {
+        const prefix = `${dictRepo}_`;
         for (const key of this.cache.keys()) {
             if (key.startsWith(prefix)) {
                 this.cache.delete(key);
             }
         }
-        this.loadingPromises.clear();
-        this.preloadedImages.clear();
+        for (const key of this.loadingPromises.keys()) {
+            if (key.startsWith(prefix)) {
+                this.loadingPromises.delete(key);
+            }
+        }
+        for (const key of this.preloadedImages.keys()) {
+            if (key.startsWith(prefix)) {
+                this.preloadedImages.delete(key);
+            }
+        }
     }
 };
 
@@ -277,7 +321,48 @@ function padPage(page) {
 }
 
 function isNumeric(str) {
-    return !isNaN(str) && !isNaN(parseInt(str));
+    return /^[1-9]\d*$/.test(String(str).trim());
+}
+
+function isValidPageId(page, pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE) {
+    const pageId = String(page).trim();
+    if (!pageId) {
+        return false;
+    }
+
+    const contentCount = pageConfigs.content.count;
+    const headerCount = pageConfigs.header.count;
+    const footerCount = pageConfigs.footer.count;
+
+    if (isNumeric(pageId)) {
+        const pageNumber = parseInt(pageId, 10);
+        return pageNumber > 0 && pageNumber <= contentCount;
+    }
+
+    if (pageId.startsWith(pageConfigs.header.prefix)) {
+        const pageNumber = parseInt(pageId.slice(pageConfigs.header.prefix.length), 10);
+        return pageNumber > 0 && pageNumber <= headerCount;
+    }
+
+    if (pageId.startsWith(pageConfigs.footer.prefix)) {
+        const pageNumber = parseInt(pageId.slice(pageConfigs.footer.prefix.length), 10);
+        return pageNumber > 0 && pageNumber <= footerCount;
+    }
+
+    return false;
+}
+
+function normalizePageId(page, pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE) {
+    const pageId = String(page).trim();
+    if (!isValidPageId(pageId, pageConfigs)) {
+        return null;
+    }
+
+    if (isNumeric(pageId)) {
+        return padPage(pageId);
+    }
+
+    return pageId;
 }
 
 function applyFontPreference(fontId) {
@@ -330,8 +415,7 @@ function initializeProxySelector() {
     proxySelector.value = selectedProxyId;
     proxySelector.addEventListener("change", (event) => {
         selectedProxyId = event.target.value;
-        proxyCache.failedProxies.clear();
-        proxyCache.lastSuccessProxy = null;
+        proxyCache.clearAll();
         setStorageValue(STORAGE_KEYS.proxy, selectedProxyId);
     });
 }
@@ -389,7 +473,7 @@ async function getImageLink(owner, repo, branch, imagePath) {
 
 function getImageCandidates(owner, repo, branch, imagePath) {
     const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
-    const bestProxy = proxyCache.getBestProxy(urlProxyList, selectedProxyId);
+    const bestProxy = proxyCache.getBestProxy(urlProxyList, selectedProxyId, "image");
     const orderedCandidates = bestProxy
         ? [bestProxy, ...candidates.filter(proxy => proxy !== bestProxy)]
         : candidates;
@@ -417,13 +501,13 @@ async function _loadImageFromRemote(owner, repo, branch, imagePath) {
     for (const { proxy, url } of candidates) {
         try {
             const loadedUrl = await loadImageElement(url);
-            proxyCache.updateProxy(proxy);
+            proxyCache.updateProxy(proxy, "image");
             return loadedUrl;
         } catch (error) {
             if (DEBUG) {
                 console.warn(`Failed to load image from ${proxy.name}`, error);
             }
-            proxyCache.addFail(proxy);
+            proxyCache.addFail(proxy, "image");
         }
     }
 
@@ -482,23 +566,20 @@ async function initializeDictSelector() {
                 if (!selectedDict) {
                     return
                 }
-                currentDictRepo = selectedDict.repo;
+                const previousDictRepo = currentDictRepo;
+                applyDictionarySelection(selectedDict.repo, selectedOption?.dataset.logo, selectedDict.name);
                 if (DEBUG) {
                     console.log("Switch dict", currentDictRepo);
                 }
 
-                // Update the logo
-                dictLogo.src = selectedOption.dataset.logo;
-                dictLogo.alt = `${selectedDict.name} Logo`;
-                document.getElementById("searchInput").value = "";
-                document.getElementById("searchSuggestions").textContent = "";
-                document.getElementById("searchResult").textContent = "";
+                resetSearchUi();
+                imageCache.clearCurrentDict(previousDictRepo);
+                currentImageIndex = getFirstPageId(repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE);
                 await initializeDictionaryView();
             });
 
             // Set the logo for the first dictionary
-            dictLogo.src = repoConfigs[currentDictRepo].logo;
-            dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
+            applyDictionarySelection(currentDictRepo, repoConfigs[currentDictRepo].logo, repoConfigs[currentDictRepo].name);
             await initializeFromURL();
             document.body.dataset.ready = "true";
         }
@@ -507,7 +588,55 @@ async function initializeDictSelector() {
     }
 }
 
-async function initializeDictionaryView() {
+function applyDictionarySelection(dictRepo, logoSrc, dictName) {
+    currentDictRepo = dictRepo;
+    const dictSelector = document.getElementById("dictSelector");
+    const dictLogo = document.getElementById("dictLogo");
+    if (dictSelector) {
+        dictSelector.value = dictRepo;
+    }
+    if (dictLogo) {
+        dictLogo.src = logoSrc || repoConfigs[dictRepo]?.logo || "";
+        dictLogo.alt = `${dictName || repoConfigs[dictRepo]?.name || "Dictionary"} Logo`;
+    }
+}
+
+function resetSearchUi() {
+    if (suggestionSearchTimer) {
+        window.clearTimeout(suggestionSearchTimer);
+        suggestionSearchTimer = null;
+    }
+    const searchInput = document.getElementById("searchInput");
+    const searchSuggestions = document.getElementById("searchSuggestions");
+    const searchResult = document.getElementById("searchResult");
+    if (searchInput) {
+        searchInput.value = "";
+    }
+    if (searchSuggestions) {
+        searchSuggestions.textContent = "";
+        searchSuggestions.classList.remove("visible");
+    }
+    if (searchResult) {
+        searchResult.textContent = "";
+    }
+    highlightedIndex = -1;
+}
+
+function getFirstPageId(pageConfigs = repoConfigs[currentDictRepo]?.pages || DEFAULT_PAGE) {
+    if (pageConfigs.header.count > 0) {
+        return `${pageConfigs.header.prefix}${padPage(1)}`;
+    }
+    if (pageConfigs.content.count > 0) {
+        return padPage(1);
+    }
+    if (pageConfigs.footer.count > 0) {
+        return `${pageConfigs.footer.prefix}${padPage(1)}`;
+    }
+    return DEFAULT_IMAGE_INDEX;
+}
+
+async function initializeDictionaryView(options = {}) {
+    const { showImage = true } = options;
     const bookmarksList = document.getElementById("bookmarksList");
     if (!currentDictRepo) {
         console.error("No dictionary selected");
@@ -518,8 +647,10 @@ async function initializeDictionaryView() {
     }
 
     setupSearch(MAX_RESULTS);
-    await showImage();
     await setupBookmarks();
+    if (showImage) {
+        await showImage();
+    }
     return true;
 }
 
@@ -542,7 +673,7 @@ async function initializeDictData(repo) {
     for (const { key, path } of fileList) {
         currentDictData[key] = null;
         const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
-        let proxy = proxyCache.getBestProxy(candidates);
+        let proxy = proxyCache.getBestProxy(candidates, "auto", "metadata");
         let fileLoaded = false;
 
         while (proxy) {
@@ -551,15 +682,15 @@ async function initializeDictData(repo) {
                 const result = await loadJSONFile(repoURL);
                 if (result) {
                     currentDictData[key] = result;
-                    proxyCache.updateProxy(proxy);
+                    proxyCache.updateProxy(proxy, "metadata");
                     fileLoaded = true;
                     break;
                 }
             } catch (error) {
                 console.warn(`Failed to load ${path} from ${proxy.name}`, error);
             }
-            proxyCache.addFail(proxy);
-            proxy = proxyCache.getBestProxy(candidates);
+            proxyCache.addFail(proxy, "metadata");
+            proxy = proxyCache.getBestProxy(candidates, "auto", "metadata");
         }
 
         if (!fileLoaded) {
@@ -603,13 +734,14 @@ function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, branch
         }
 
         const imagePath = getImagePath(page, suffix);
-        if (imageCache.isCached(imagePath) || imageCache.preloadedImages.has(imagePath)) {
+        const preloadKey = imageCache.getKey(imagePath);
+        if (imageCache.isCached(imagePath) || imageCache.preloadedImages.has(preloadKey)) {
             continue;
         }
 
-        imageCache.preloadedImages.add(imagePath);
+        imageCache.preloadedImages.add(preloadKey);
         getImageLink(owner, repo, branch, imagePath).catch(error => {
-            imageCache.preloadedImages.delete(imagePath);
+            imageCache.preloadedImages.delete(preloadKey);
             if (DEBUG) {
                 console.warn("Preload failed:", imagePath, error);
             }
@@ -638,6 +770,10 @@ async function searchImages(limit) {
     const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
     const searchInput = document.getElementById("searchInput").value.trim();
     const divResult = document.getElementById("searchResult");
+    if (suggestionSearchTimer) {
+        window.clearTimeout(suggestionSearchTimer);
+        suggestionSearchTimer = null;
+    }
     divResult.textContent = "";
 
     // 输入为空则忽略
@@ -886,6 +1022,7 @@ function matchWeight(term, query) {
 
 function searchInDictionary(query, limit) {
     const results = [];
+    const seen = new Set();
     const maxLimit = limit * 3;
     const normalizedQuery = query.toLowerCase().trim(); // TODO 拼音兼容
     const pinyinQuery = fixPinyin(normalizedQuery);
@@ -900,12 +1037,21 @@ function searchInDictionary(query, limit) {
         if (!currentDictData[key]) continue;
         if (key === keyPinyin && pinyinQuery !== normalizedQuery) {
             if (Object.hasOwn(currentDictData[key], pinyinQuery)) {
-                results.push({
-                    term: pinyinQuery,
-                    page: padPage(currentDictData[key][pinyinQuery]),
-                    type,
-                    key,
-                    score: weight,
+                const pages = Array.isArray(currentDictData[key][pinyinQuery])
+                    ? currentDictData[key][pinyinQuery]
+                    : [currentDictData[key][pinyinQuery]];
+                pages.forEach((page) => {
+                    const pageId = padPage(page);
+                    const dedupeKey = `${key}:${pinyinQuery}:${pageId}`;
+                    if (seen.has(dedupeKey)) return;
+                    seen.add(dedupeKey);
+                    results.push({
+                        term: pinyinQuery,
+                        page: pageId,
+                        type,
+                        key,
+                        score: weight,
+                    });
                 });
             }
         }
@@ -917,9 +1063,13 @@ function searchInDictionary(query, limit) {
             ) {
                 const pages = Array.isArray(value) ? value : [value];
                 pages.forEach((page) => {
+                    const pageId = padPage(page);
+                    const dedupeKey = `${key}:${term}:${pageId}`;
+                    if (seen.has(dedupeKey)) return;
+                    seen.add(dedupeKey);
                     results.push({
                         term,
-                        page: padPage(page),
+                        page: pageId,
                         type,
                         key,
                         score: matchWeight(term, normalizedQuery) + weight,
@@ -932,7 +1082,7 @@ function searchInDictionary(query, limit) {
     }
 
     // Sort by score and limit results
-    return results.sort((a, b) => a.score - b.score || a.page - b.page);
+    return results.sort((a, b) => a.score - b.score || a.page.localeCompare(b.page));
 }
 
 function showSearchSuggestions(query, limit) {
@@ -981,6 +1131,33 @@ function showSearchSuggestions(query, limit) {
     }
 
     suggestionsContainer.classList.add("visible");
+}
+
+function hideSearchSuggestions() {
+    const suggestionsContainer = document.getElementById("searchSuggestions");
+    if (!suggestionsContainer) {
+        return;
+    }
+    suggestionsContainer.textContent = "";
+    suggestionsContainer.classList.remove("visible");
+}
+
+function scheduleSearchSuggestions(query, limit) {
+    if (suggestionSearchTimer) {
+        window.clearTimeout(suggestionSearchTimer);
+        suggestionSearchTimer = null;
+    }
+
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < SEARCH_SUGGESTION_MIN_LENGTH) {
+        hideSearchSuggestions();
+        return;
+    }
+
+    suggestionSearchTimer = window.setTimeout(() => {
+        suggestionSearchTimer = null;
+        showSearchSuggestions(normalizedQuery, limit);
+    }, SEARCH_SUGGESTION_DEBOUNCE_MS);
 }
 
 function highlightSuggestion(direction) {
@@ -1041,7 +1218,7 @@ function setupSearch(limit) {
     // Handle input changes for suggestions
     searchInput.addEventListener("input", (e) => {
         highlightedIndex = -1;
-        showSearchSuggestions(e.target.value, limit);
+        scheduleSearchSuggestions(e.target.value, limit);
     });
 
     // Close suggestions when clicking outside
@@ -1077,20 +1254,13 @@ async function initializeFromURL() {
     }
     if (dictParam in repoConfigs) {
         const dictSelector = document.getElementById("dictSelector");
-        const dictLogo = document.getElementById("dictLogo");
-        const option = dictSelector.querySelector(`option[value="${dictParam}"]`);
-
-        if (option) {
-            currentDictRepo = dictParam;
+        if (dictSelector) {
             dictSelector.value = dictParam;
-            dictLogo.src = repoConfigs[currentDictRepo].logo;
-            dictLogo.alt = `${repoConfigs[currentDictRepo].name} Logo`;
-            dictSelector.dispatchEvent(new Event("change", { bubbles: true }));
         }
+        applyDictionarySelection(dictParam, repoConfigs[dictParam].logo, repoConfigs[dictParam].name);
     }
 
-    setupSearch(MAX_RESULTS);
-    await setupBookmarks();
+    await initializeDictionaryView({ showImage: false });
 
     if (queryParam && !pageParam) {
         const searchInput = document.getElementById("searchInput");
@@ -1099,20 +1269,18 @@ async function initializeFromURL() {
         searchBtn.click();
     } else if (pageParam) {
         let isSuccess = false;
-        if (isNumeric(pageParam)) {
-            const pageConfigs = repoConfigs[currentDictRepo].pages || DEFAULT_PAGE;
-            const maxPage = pageConfigs.content.count;
-            const pageNumber = parseInt(pageParam);
-            if (pageNumber > 0 && pageNumber <= maxPage) {
-                currentImageIndex = padPage(pageNumber);
-                await showImage();
-                isSuccess = true;
-            }
+        const normalizedPage = normalizePageId(pageParam);
+        if (normalizedPage) {
+            currentImageIndex = normalizedPage;
+            await showImage();
+            isSuccess = true;
         }
         if (!isSuccess) {
             const divResult = document.getElementById("searchResult");
             divResult.textContent = "页码参数格式异常";
         }
+    } else {
+        await showImage();
     }
     // updateURLParameters();
 }
