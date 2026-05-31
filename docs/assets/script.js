@@ -64,6 +64,7 @@ let searchIsSetup = false;
 let imageLoadToken = 0;
 let highlightedIndex = -1;
 let suggestionSearchTimer = null;
+let pendingDictLoads = {};
 
 const pinyinKeys = Object.keys(PINYIN_MAP).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const pinyinRegExp = new RegExp(pinyinKeys, "gi");
@@ -549,14 +550,16 @@ async function initializeDictSelector() {
                 dictSelector.appendChild(option);
             });
 
-            // 获取所有词典信息
-            const promises = dictConfigs.map(async (dict) => {
-                const data = await initializeDictData(dict.repo);
-                return { repo: dict.repo, data };
-            });
-            const results = await Promise.all(promises);
-            results.forEach(item => {
-                repoConfigs[item.repo] = { ...repoConfigs[item.repo], ...item.data };
+            // 加载默认词典数据
+            const defaultData = await initializeDictData(dictConfigs[0].repo);
+            repoConfigs[dictConfigs[0].repo] = { ...repoConfigs[dictConfigs[0].repo], ...defaultData };
+
+            // 后台懒加载其余词典数据
+            dictConfigs.slice(1).forEach((dict) => {
+                pendingDictLoads[dict.repo] = (async () => {
+                    const data = await initializeDictData(dict.repo);
+                    repoConfigs[dict.repo] = { ...repoConfigs[dict.repo], ...data };
+                })();
             });
 
             dictSelector.addEventListener("change", async (e) => {
@@ -565,6 +568,14 @@ async function initializeDictSelector() {
 
                 if (!selectedDict) {
                     return
+                }
+                // 如果该词典数据尚未加载完成，等待它
+                if (pendingDictLoads[selectedDict.repo]) {
+                    try {
+                        await pendingDictLoads[selectedDict.repo];
+                    } catch (loadError) {
+                        console.warn(`Background load failed for ${selectedDict.repo}:`, loadError);
+                    }
                 }
                 const previousDictRepo = currentDictRepo;
                 applyDictionarySelection(selectedDict.repo, selectedOption?.dataset.logo, selectedDict.name);
@@ -655,7 +666,6 @@ async function initializeDictionaryView(options = {}) {
 }
 
 async function initializeDictData(repo) {
-    // const repo = currentDictRepo;
     const owner = metaConfigs.owner;
     const branch = metaConfigs.branch;
     const dataPath = metaConfigs.dataPath;
@@ -670,7 +680,7 @@ async function initializeDictData(repo) {
     }
 
     const fileList = getFileList(files, dataPath);
-    for (const { key, path } of fileList) {
+    const loadResults = await Promise.all(fileList.map(async ({ key, path }) => {
         currentDictData[key] = null;
         const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
         let proxy = proxyCache.getBestProxy(candidates, "auto", "metadata");
@@ -696,7 +706,8 @@ async function initializeDictData(repo) {
         if (!fileLoaded) {
             console.error(`Failed to load ${path} from all mirrors`);
         }
-    }
+        return { key, loaded: fileLoaded };
+    }));
 
     return currentDictData;
 }
