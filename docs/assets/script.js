@@ -387,29 +387,47 @@ async function getImageLink(owner, repo, branch, imagePath) {
     }
 }
 
+function getImageCandidates(owner, repo, branch, imagePath) {
+    const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
+    const bestProxy = proxyCache.getBestProxy(urlProxyList, selectedProxyId);
+    const orderedCandidates = bestProxy
+        ? [bestProxy, ...candidates.filter(proxy => proxy !== bestProxy)]
+        : candidates;
+
+    return orderedCandidates.map(proxy => ({
+        proxy,
+        url: buildUrl(proxy.url, owner, repo, branch, imagePath),
+    }));
+}
+
+function loadImageElement(url) {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.decoding = "async";
+        image.onload = () => resolve(url);
+        image.onerror = () => reject(new Error(`Image load failed: ${url}`));
+        image.src = url;
+    });
+}
+
 // Separate function for actual remote loading
 async function _loadImageFromRemote(owner, repo, branch, imagePath) {
-    const defaultImageUrl = DEFAULT_IMAGE;
+    const candidates = getImageCandidates(owner, repo, branch, imagePath);
 
-    const candidates = getProxyCandidates(urlProxyList, selectedProxyId);
-    let proxy = proxyCache.getBestProxy(candidates);
-
-    while (proxy) {
-        const imageUrl = buildUrl(proxy.url, owner, repo, branch, imagePath);
+    for (const { proxy, url } of candidates) {
         try {
-            const response = await fetch(imageUrl, { method: "HEAD" });
-            if (response.ok) {
-                proxyCache.updateProxy(proxy);
-                return imageUrl;
-            }
+            const loadedUrl = await loadImageElement(url);
+            proxyCache.updateProxy(proxy);
+            return loadedUrl;
         } catch (error) {
-            console.warn(`Failed to load image from ${proxy.name}`, error);
+            if (DEBUG) {
+                console.warn(`Failed to load image from ${proxy.name}`, error);
+            }
+            proxyCache.addFail(proxy);
         }
-        proxyCache.addFail(proxy);
-        proxy = proxyCache.getBestProxy(candidates);
     }
 
-    return defaultImageUrl;
+    throw new Error(`Failed to load image from all mirrors: ${imagePath}`);
 }
 
 async function initializeDictSelector() {
@@ -560,50 +578,59 @@ function getImagePath(page, suffix) {
     return imagePath
 }
 
-// Preload adjacent images for smooth navigation
-async function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, branch) {
-    const preloadPromises = [];
-    let outURL = null;
+function scheduleIdleTask(callback) {
+    if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(callback, { timeout: 1200 });
+        return;
+    }
+    window.setTimeout(callback, 150);
+}
+
+// Preload adjacent images for smooth navigation without blocking the current page.
+function _preloadAdjacentImages(currentIndex, limit, suffix, owner, repo, branch) {
+    if (limit <= 0) {
+        return;
+    }
+
     for (let offset = -limit; offset <= limit; offset++) {
-        const page = changePage(currentIndex, offset);
-        const imagePath = getImagePath(page, suffix);
-        const imageURL = getImageLink(owner, repo, branch, imagePath);
         if (offset === 0) {
-            outURL = imageURL;
+            continue;
         }
 
-        if (!imageCache.isCached(imagePath) && !imageCache.preloadedImages.has(imagePath)) {
-            if (offset === 0) {
-                setStatusMessage("加载中……");
+        const page = changePage(currentIndex, offset);
+        if (page === currentIndex) {
+            continue;
+        }
+
+        const imagePath = getImagePath(page, suffix);
+        if (imageCache.isCached(imagePath) || imageCache.preloadedImages.has(imagePath)) {
+            continue;
+        }
+
+        imageCache.preloadedImages.add(imagePath);
+        getImageLink(owner, repo, branch, imagePath).catch(error => {
+            imageCache.preloadedImages.delete(imagePath);
+            if (DEBUG) {
+                console.warn("Preload failed:", imagePath, error);
             }
-            preloadPromises.push(
-                imageURL.then(url => {
-                    imageCache.preloadedImages.add(imagePath);
-                    // Preload the actual image into browser cache
-                    const img = new Image();
-                    img.src = url;
-                })
-                    .catch(err => console.warn("Preload failed:", imagePath, err))
-            );
-        }
+        });
     }
-
-    if (preloadPromises.length > 0) {
-        Promise.allSettled(preloadPromises);
-    }
-    return outURL;
 }
 
 async function preLoadImages(index, limit) {
-    // const currentPage = padPage(index);
     const suffix = metaConfigs.imageSuffix;
     const repo = currentDictRepo;
     const owner = metaConfigs.owner;
     const branch = metaConfigs.branch;
-    const imageUrl = await _preloadAdjacentImages(index, 0, suffix, owner, repo, branch);
+    const imagePath = getImagePath(index, suffix);
+    const imageUrl = await getImageLink(owner, repo, branch, imagePath);
+
     if (limit > 0) {
-        _preloadAdjacentImages(index, limit, suffix, owner, repo, branch);
+        scheduleIdleTask(() => {
+            _preloadAdjacentImages(index, limit, suffix, owner, repo, branch);
+        });
     }
+
     return imageUrl;
 }
 
@@ -649,54 +676,31 @@ async function searchImages(limit) {
 
 async function showImage(limit = 0) {
     const imgElement = document.getElementById("mainImage");
+    const resultContainer = document.querySelector(".result-container");
     const loadToken = ++imageLoadToken;
-    imgElement.style.opacity = "0.3";
+    resultContainer?.classList.add("is-loading");
+    setStatusMessage("加载中……");
     try {
         const imageUrl = await preLoadImages(currentImageIndex, limit);
-        const tempImg = new Image();
-
-        // Use a Promise to handle the image loading
-        await new Promise((resolve, reject) => {
-            tempImg.onload = () => {
-                if (loadToken !== imageLoadToken) {
-                    resolve();
-                    return;
-                }
-                // Image loaded successfully, update the main image
-                imgElement.src = imageUrl;
-                imgElement.style.opacity = "1";
-                resolve();
-            };
-
-            tempImg.onerror = () => {
-                if (loadToken !== imageLoadToken) {
-                    resolve();
-                    return;
-                }
-                // Image failed to load, use fallback
-                console.error("Image loading failed for:", imageUrl);
-                imgElement.src = DEFAULT_IMAGE;
-                imgElement.style.opacity = "0.3";
-                reject(new Error("Image load error"));
-            };
-
-            // Start loading the image
-            tempImg.src = imageUrl;
-        });
-        if (loadToken === imageLoadToken) {
-            setStatusMessage("");
+        if (loadToken !== imageLoadToken) {
+            return;
         }
+        imgElement.src = imageUrl;
+        imgElement.style.opacity = "1";
+        setStatusMessage("");
     } catch (error) {
         if (loadToken !== imageLoadToken) {
             return;
         }
-        setStatusMessage("加载失败");
+        setStatusMessage("图片加载失败，请切换来源或稍后重试");
         console.error("Error loading image:", error);
         imgElement.src = DEFAULT_IMAGE;
         imgElement.style.opacity = "0.3";
-    }
-    if (loadToken === imageLoadToken) {
-        updateURLParameters();
+    } finally {
+        if (loadToken === imageLoadToken) {
+            resultContainer?.classList.remove("is-loading");
+            updateURLParameters();
+        }
     }
 }
 
