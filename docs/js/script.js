@@ -8,6 +8,7 @@
 let searchIsSetup = false;
 let highlightedIndex = -1;
 let suggestionSearchTimer = null;
+let font_options = [];
 let pendingDictLoads = {};
 
 // ── DOM Helpers ──
@@ -18,7 +19,7 @@ function setStatusMessage(message) {
 }
 
 function applyFontPreference(fontId) {
-    const selectedFont = FONT_OPTIONS.find(option => option.id === fontId) || FONT_OPTIONS[0];
+    const selectedFont = font_options.find(option => option.id === fontId) || font_options[0];
     document.documentElement.style.setProperty("--font", selectedFont.stack);
     setStorageValue(STORAGE_KEYS.font, selectedFont.id);
     return selectedFont.id;
@@ -58,13 +59,13 @@ function initializeFontSelector() {
     const sel = document.getElementById("fontSelector");
     if (!sel) return;
     sel.innerHTML = "";
-    FONT_OPTIONS.forEach(font => {
+    font_options.forEach(font => {
         const opt = document.createElement("option");
         opt.value = font.id;
         opt.textContent = font.name;
         sel.appendChild(opt);
     });
-    const fontId = getStorageValue(STORAGE_KEYS.font, FONT_OPTIONS[0].id);
+    const fontId = getStorageValue(STORAGE_KEYS.font, font_options[0].id);
     sel.value = applyFontPreference(fontId);
     sel.addEventListener("change", e => applyFontPreference(e.target.value));
 }
@@ -461,6 +462,7 @@ async function initializeDictSelector() {
         urlProxyList = normalizeProxyEntries(data.urls || []);
         metaConfigs = data.config || {};
         fileInfoList = data.files || [];
+        font_options = data.fonts || DEFAULT_FONTS;
         initializeSettingsPanel();
 
         const dictSelector = document.getElementById("dictSelector");

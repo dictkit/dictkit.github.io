@@ -8,6 +8,14 @@
     "imageExtra": "docs/extra",
     "imageSuffix": "png"
   },
+  "fonts": [
+    { "id": "kinghwa", "name": "京华老宋", "stack": "'KingHwaOldSong', 'Times New Roman', system-ui, -apple-system, serif" },
+    { "id": "system", "name": "系统默认", "stack": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+    { "id": "song", "name": "宋体", "stack": "'SimSun', 'Songti SC', 'Noto Serif CJK SC', serif" },
+    { "id": "fangsong", "name": "仿宋", "stack": "'FangSong', 'STFangsong', serif" },
+    { "id": "hei", "name": "黑体", "stack": "'PingFang SC', 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" },
+    { "id": "kai", "name": "楷体", "stack": "'KaiTi', 'Kaiti SC', 'STKaiti', serif" }
+  ],
   "files": [
     { "path": "pinyin.json", "key": "pinyin", "type": "拼音", "weight": 0.0 },
     { "path": "chars.json", "key": "chars", "type": "单字", "weight": 0.1 },
@@ -39,6 +47,11 @@
       "id": "ghproxy",
       "name": "GHProxy",
       "url": "https://ghproxy.net/https://raw.githubusercontent.com/:owner/:repo/refs/heads/:branch/:filepath"
+    },
+    {
+      "id": "githack",
+      "name": "GitHack",
+      "url": "https://raw.githack.com/:owner/:repo/:branch/:filepath"
     }
   ],
   "dicts": [

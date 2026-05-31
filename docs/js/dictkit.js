@@ -26,39 +26,9 @@ const STORAGE_KEYS = {
     font: "dictkit:font",
     proxy: "dictkit:proxy",
 };
-
-const FONT_OPTIONS = [
-    {
-        id: "kinghwa",
-        name: "京华老宋",
-        stack: "'KingHwaOldSong', 'Times New Roman', system-ui, -apple-system, serif",
-    },
-    {
-        id: "system",
-        name: "系统默认",
-        stack: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    },
-    {
-        id: "song",
-        name: "宋体",
-        stack: "'SimSun', 'Songti SC', 'Noto Serif CJK SC', serif",
-    },
-    {
-        id: "hei",
-        name: "黑体",
-        stack: "'PingFang SC', 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif",
-    },
-    {
-        id: "kai",
-        name: "楷体",
-        stack: "'KaiTi', 'Kaiti SC', 'STKaiti', serif",
-    },
-    {
-        id: "fangsong",
-        name: "仿宋",
-        stack: "'FangSong', 'STFangsong', serif",
-    },
-];
+const DEFAULT_FONTS = [
+    { "id": "raw", "name": "默认", "stack": "system-ui, -apple-system, sans-serif" },
+]
 
 const PROXY_CACHE_DURATION = 30 * 60 * 1000; // 30分钟
 const IMAGE_CACHE_CONFIG = {
